@@ -2,14 +2,16 @@ package eu.aylett.arc;
 
 import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.ElementList;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
-import java.lang.ref.WeakReference;
+import java.lang.ref.SoftReference;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
-public class Arc<K, V> {
+public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   private final Function<K, V> loader;
   private final ForkJoinPool pool;
 
@@ -17,99 +19,65 @@ public class Arc<K, V> {
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
-    t1 = new ElementList<>(capacity);
-    t2 = new ElementList<>(capacity);
-    b1 = new ElementList<>(capacity);
-    b2 = new ElementList<>(capacity);
-    targetT1 = capacity;
+    seenOnceExpiring = new ElementList<>(capacity, null);
+    seenMultiExpiring = new ElementList<>(capacity, null);
+    seenOnceLRU = new ElementList<>(capacity, seenOnceExpiring);
+    seenMultiLRU = new ElementList<>(capacity, seenMultiExpiring);
+    targetSeenOnceSize = capacity;
   }
 
-  private final ConcurrentHashMap<K, WeakReference<Element<K, V>>> elements;
-  private final ElementList<K, V> t1;
-  private final ElementList<K, V> t2;
-  private final ElementList<K, V> b1;
-  private final ElementList<K, V> b2;
-  private int targetT1;
+  private final ConcurrentHashMap<K, SoftReference<@Nullable Element<K, V>>> elements;
+  private final ElementList<K, V> seenOnceLRU;
+  private final ElementList<K, V> seenMultiLRU;
+  private final ElementList<K, V> seenOnceExpiring;
+  private final ElementList<K, V> seenMultiExpiring;
+  private int targetSeenOnceSize;
 
   public V get(K key) {
 
     while (true) {
-      try {
         var newElement = new Element<>(key, loader, pool);
-        var ref = elements.computeIfAbsent(key, k -> new WeakReference<>(newElement));
+        var ref = elements.computeIfAbsent(key, k -> new SoftReference<>(newElement));
         if (ref.refersTo(newElement)) {
           // Not seen before
-          if (t1.size >= targetT1) {
-            var expired = t1.shrink();
-            if (expired != null) {
-              expired.value = null;
-              var dead = b1.push(expired);
-              if (dead != null) {
-                dead.owner = null;
-              }
-            }
-          } else {
-            t1.push(newElement);
-            var expired = t2.shrink();
-            if (expired != null) {
-              expired.value = null;
-              var dead = b2.push(expired);
-              if (dead != null) {
-                dead.owner = null;
-              }
-            }
-          }
+          var lruToShrink = seenOnceLRU.size >= targetSeenOnceSize ? seenOnceLRU : seenMultiLRU;
+          lruToShrink.shrink();
+
           return newElement.get();
         }
         var e = ref.get();
         if (e == null) {
           // Remove if expired and not already removed/replaced
-          elements.computeIfPresent(key, (k, v) -> {
-            if (v.refersTo(null)) {
-              return null;
+          elements.computeIfPresent(key, new BiFunction<K, SoftReference<@Nullable Element<K, V>>, @Nullable SoftReference<@Nullable Element<K, V>>>() {
+            @Override
+            public @Nullable SoftReference<@Nullable Element<K, V>> apply(K k, SoftReference<@Nullable Element<K, V>> v) {
+              if (v.refersTo(null)) {
+                return null;
+              }
+              return v;
             }
-            return v;
           });
           continue;
         }
         // Seen before
-        if (e.owner == null) {
+        if (e.listLocation == null) {
           // Expired out of cache
-          t1.push(e);
-        } else if (e.owner.owner == t1) {
-          var expire = t2.push(e);
-          if (expire != null) {
-            expire.value = null;
-            var dead = b2.push(expire);
-            if (dead != null) {
-              dead.owner = null;
-            }
-          }
-        } else if (e.owner.owner == t2) {
-          t2.push(e);
-        } else if (e.owner.owner == b1) {
-          targetT1 += 1;
-          var expire = t2.push(e);
-          if (expire != null) {
-            expire.value = null;
-            var dead = b2.push(expire);
-            if (dead != null) {
-              dead.owner = null;
-            }
-          }
-        } else if (e.owner.owner == b2) {
-          t2.grow(e);
-          targetT1 -= 1;
+          seenOnceLRU.push(e);
+        } else if (e.listLocation.owner == seenOnceLRU) {
+          seenMultiLRU.push(e);
+        } else if (e.listLocation.owner == seenMultiLRU) {
+          seenMultiLRU.push(e);
+        } else if (e.listLocation.owner == seenOnceExpiring) {
+          targetSeenOnceSize += 1;
+          seenMultiLRU.push(e);
+        } else if (e.listLocation.owner == seenMultiExpiring) {
+          seenMultiLRU.grow(e);
+          targetSeenOnceSize -= 1;
         } else {
           // Expired out of cache
-          t1.push(e);
+          seenOnceLRU.push(e);
         }
         return e.get();
-      } catch (InterruptedException e) {
-        // retry
-      } catch (ExecutionException e) {
-        throw new RuntimeException(e);
-      }
     }
   }
 }

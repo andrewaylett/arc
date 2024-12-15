@@ -1,7 +1,13 @@
 package eu.aylett.arc.internal;
 
-class TailElement<K, V> implements ElementBase<K, V> {
-  public ElementBase<K, V> prev;
+import org.checkerframework.checker.initialization.qual.NotOnlyInitialized;
+
+final class TailElement<K, V> implements ElementBase<K, V> {
+  @NotOnlyInitialized ElementBase<K, V> prev;
+
+  TailElement() {
+    prev = this;
+  }
 
   @Override
   public void setPrev(ElementBase<K, V> prev) {

@@ -13,3 +13,5 @@ plugins {
 
 rootProject.name = "arc"
 include("lib")
+
+enableFeaturePreview("STABLE_CONFIGURATION_CACHE")

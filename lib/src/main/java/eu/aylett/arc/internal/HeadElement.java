@@ -1,7 +1,13 @@
 package eu.aylett.arc.internal;
 
-class HeadElement<K, V> implements ElementBase<K, V> {
-  protected ElementBase<K, V> next;
+import org.checkerframework.checker.initialization.qual.NotOnlyInitialized;
+
+final class HeadElement<K, V> implements ElementBase<K, V> {
+  @NotOnlyInitialized ElementBase<K, V> next;
+
+  HeadElement() {
+    next = this;
+  }
 
   @Override
   public void setPrev(ElementBase<K, V> prev) {

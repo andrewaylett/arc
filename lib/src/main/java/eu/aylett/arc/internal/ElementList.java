@@ -1,19 +1,24 @@
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.jspecify.annotations.Nullable;
 
-public class ElementList<K, V> {
+public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   private int capacity;
+  private final @Nullable ElementList<K, V> expiryTarget;
   final HeadElement<K, V> head;
   private final TailElement<K, V> tail;
   public int size;
 
-  public ElementList(int capacity) {
+  public ElementList(int capacity, @Nullable ElementList<K, V> expiryTarget) {
     this.capacity = capacity;
-    head = new HeadElement<>();
-    tail = new TailElement<>();
-    head.next = tail;
-    tail.prev = head;
+    this.expiryTarget = expiryTarget;
+    var head = new HeadElement<K, V>();
+    var tail = new TailElement<K, V>();
+    head.setNext(tail);
+    tail.setPrev(head);
+    this.head = head;
+    this.tail = tail;
     size = 0;
   }
 
@@ -22,34 +27,23 @@ public class ElementList<K, V> {
     push(newElement);
   }
 
-  public @Nullable Element<K, V> push(Element<K, V> newElement) {
-    if (newElement.owner != null) {
-      newElement.resplice(this);
-      return null;
-    }
-    newElement.owner = new Element.Owner<>(this, head.next, head);
-    head.next.setPrev(newElement);
-    head.setNext(newElement);
-    this.size += 1;
-    return evict();
+  public void push(Element<K, V> newElement) {
+    newElement.resplice(this);
+    evict();
   }
 
-  public @Nullable Element<K, V> shrink() {
+  public void shrink() {
     this.capacity -= 1;
-    return evict();
+    evict();
   }
 
-  private @Nullable Element<K, V> evict() {
+  private void evict() {
     if (this.size > this.capacity) {
       var victim = this.tail.prev;
       if (victim instanceof Element<K, V> element) {
-        assert element.owner != null;
-        this.tail.prev = element.owner.prev;
-        element.owner = null;
-        this.size -= 1;
-        return element;
+        element.value = null;
+        element.resplice(this.expiryTarget);
       }
     }
-    return null;
   }
 }
