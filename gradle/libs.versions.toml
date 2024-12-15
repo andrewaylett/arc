@@ -2,9 +2,9 @@
 # https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
 
 [versions]
-commons-math3 = "3.6.1"
-guava = "33.2.1-jre"
+jspecify = "1.0.0"
+hamcrest = "2.2"
 
 [libraries]
-commons-math3 = { module = "org.apache.commons:commons-math3", version.ref = "commons-math3" }
-guava = { module = "com.google.guava:guava", version.ref = "guava" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+hamcrest = { module = "org.hamcrest:hamcrest", version.ref = "hamcrest" }
