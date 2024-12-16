@@ -28,6 +28,11 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="jar://$USER_HOME$/.asdf/installs/java/temurin-21.0.0+35.0.LTS/lib/src.zip!/java.base/java/lang/invoke/VarHandle.java" root0="SKIP_INSPECTION" />
+    <setting file="jar://$USER_HOME$/.asdf/installs/java/temurin-21.0.0+35.0.LTS/lib/src.zip!/java.base/java/util/concurrent/CompletableFuture.java" root0="SKIP_INSPECTION" />
+    <setting file="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-qual/3.48.0/df153d27218bcf737bf9d68d50a2464ee616265b/checker-qual-3.48.0-sources.jar!/org/checkerframework/dataflow/qual/Deterministic.java" root0="SKIP_INSPECTION" />
+  </component>
   <component name="ProjectColorInfo"><![CDATA[{
   "customColor": "",
   "associatedIndex": 5
@@ -42,6 +47,7 @@
   "keyToString": {
     "Gradle.ArcTest.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "com.intellij.testIntegration.createTest.CreateTestDialog.defaultLibrary": "JUnit5",
     "com.intellij.testIntegration.createTest.CreateTestDialog.defaultLibrarySuperClass.JUnit5": "",
     "git-widget-placeholder": "main",
@@ -135,7 +141,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1734275975772</updated>
-      <workItem from="1734275981373" duration="18419000" />
+      <workItem from="1734275981373" duration="23749000" />
     </task>
     <task id="LOCAL-00001" summary="Basic not-very-thread-safe Arc">
       <option name="closed" value="true" />
@@ -161,7 +167,15 @@
       <option name="project" value="LOCAL" />
       <updated>1734293691610</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Checker Framework -- nullness">
+      <option name="closed" value="true" />
+      <created>1734304388101</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1734304388101</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -170,6 +184,7 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Basic not-very-thread-safe Arc" />
     <MESSAGE value="Modularise" />
-    <option name="LAST_COMMIT_MESSAGE" value="Modularise" />
+    <MESSAGE value="Checker Framework -- nullness" />
+    <option name="LAST_COMMIT_MESSAGE" value="Checker Framework -- nullness" />
   </component>
 </project>

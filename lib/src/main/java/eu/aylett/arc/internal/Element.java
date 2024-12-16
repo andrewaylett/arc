@@ -1,5 +1,6 @@
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.lock.qual.*;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 import org.jspecify.annotations.Nullable;
@@ -8,6 +9,7 @@ import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 public class Element<K extends @NonNull Object, V extends @NonNull Object> implements ElementBase<K, V> {
@@ -25,27 +27,30 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   }
 
   public V get() {
+    var value = this.value;
     if (value != null) {
       var v = value.join();
-      weakValue = new WeakReference<>(v);
+      this.weakValue = new WeakReference<>(v);
       return v;
     }
+    var weakValue = this.weakValue;
     if (weakValue != null) {
       var v = weakValue.get();
       if (v != null) {
-        value = CompletableFuture.completedFuture(v);
+        this.value = CompletableFuture.completedFuture(v);
         return v;
       }
     }
-    weakValue = null;
-    value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
+    this.weakValue = null;
+    this.value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
     return get();
   }
 
   @Override
   public void setPrev(ElementBase<K, V> prev) {
-    if (this.listLocation != null) {
-      this.listLocation.prev = prev;
+    var listLocation = this.listLocation;
+    if (listLocation != null) {
+      listLocation.prev = prev;
     } else {
       throw new IllegalStateException("Not owned");
     }
@@ -53,23 +58,25 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
 
   @Override
   public void setNext(ElementBase<K, V> next) {
-    if (this.listLocation != null) {
-      this.listLocation.next = next;
+    var listLocation = this.listLocation;
+    if (listLocation != null) {
+      listLocation.next = next;
     } else {
       throw new IllegalStateException("Not owned");
     }
   }
 
+  @LockingFree
   public void resplice(@Nullable ElementList<K, V> newOwner) {
-    if (listLocation != null) {
-      var oldLocation = listLocation;
+    var oldLocation = this.listLocation;
+    if (oldLocation != null) {
       oldLocation.prev.setNext(oldLocation.next);
       oldLocation.next.setPrev(oldLocation.prev);
       oldLocation.owner.size -= 1;
-      listLocation = null;
+      this.listLocation = null;
     }
     if (newOwner != null) {
-      listLocation = new ListLocation<>(newOwner, newOwner.head.next, newOwner.head);
+      this.listLocation = new ListLocation<>(newOwner, newOwner.head.next, newOwner.head);
       newOwner.head.next.setPrev(this);
       newOwner.head.setNext(this);
       newOwner.size += 1;
@@ -89,5 +96,5 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
       this.next = next;
       this.prev = prev;
     }
-    }
+  }
 }

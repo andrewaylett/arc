@@ -1,5 +1,7 @@
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.lock.qual.Holding;
+import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -22,21 +24,25 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     size = 0;
   }
 
+  @LockingFree
   public void grow(Element<K, V> newElement) {
     this.capacity += 1;
     push(newElement);
   }
 
+  @LockingFree
   public void push(Element<K, V> newElement) {
     newElement.resplice(this);
     evict();
   }
 
+  @LockingFree
   public void shrink() {
     this.capacity -= 1;
     evict();
   }
 
+  @LockingFree
   private void evict() {
     if (this.size > this.capacity) {
       var victim = this.tail.prev;

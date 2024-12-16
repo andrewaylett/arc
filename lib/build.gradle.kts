@@ -55,12 +55,12 @@ configure<CheckerFrameworkExtension> {
     extraJavacArgs =
         listOf(
             // "-AcheckPurityAnnotations",
+            "-AconcurrentSemantics"
         )
     checkers =
         listOf(
             "org.checkerframework.checker.nullness.NullnessChecker",
-//            // "org.checkerframework.checker.optional.OptionalChecker",
-//            "org.checkerframework.checker.interning.InterningChecker",
-//            "org.checkerframework.common.initializedfields.InitializedFieldsChecker",
+            "org.checkerframework.common.initializedfields.InitializedFieldsChecker",
+            "org.checkerframework.checker.lock.LockChecker",
         )
 }

@@ -4,6 +4,7 @@
     <annotationProcessing>
       <profile name="Gradle Imported" enabled="true">
         <outputRelativeToContentRoot value="true" />
+        <option name="concurrentSemantics" value="" />
         <processorPath useClasspath="false">
           <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker/3.48.3/ce08620d95495fb7d2fea5011519f66cf3fa0efe/checker-3.48.3-all.jar" />
           <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-util/3.48.3/c518167682dec9369a10686b759238607e3fe0aa/checker-util-3.48.3.jar" />
