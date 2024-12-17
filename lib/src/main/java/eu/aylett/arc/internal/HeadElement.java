@@ -3,7 +3,8 @@ package eu.aylett.arc.internal;
 import org.checkerframework.checker.initialization.qual.NotOnlyInitialized;
 
 final class HeadElement<K, V> implements ElementBase<K, V> {
-  @NotOnlyInitialized ElementBase<K, V> next;
+  @NotOnlyInitialized
+  ElementBase<K, V> next;
 
   HeadElement() {
     next = this;

@@ -1,15 +1,12 @@
 package eu.aylett.arc.internal;
 
-import org.checkerframework.checker.lock.qual.*;
+import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 public class Element<K extends @NonNull Object, V extends @NonNull Object> implements ElementBase<K, V> {
@@ -88,10 +85,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     public ElementBase<K, V> next;
     public ElementBase<K, V> prev;
 
-    public ListLocation(
-            ElementList<K, V> owner,
-            ElementBase<K, V> next,
-            ElementBase<K, V> prev) {
+    public ListLocation(ElementList<K, V> owner, ElementBase<K, V> next, ElementBase<K, V> prev) {
       this.owner = owner;
       this.next = next;
       this.prev = prev;

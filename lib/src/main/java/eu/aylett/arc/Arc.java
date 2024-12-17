@@ -36,15 +36,17 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
       var e = ref.get();
       if (e == null) {
         // Remove if expired and not already removed/replaced
-        elements.computeIfPresent(key, new BiFunction<K, SoftReference<@Nullable Element<K, V>>, @Nullable SoftReference<@Nullable Element<K, V>>>() {
-          @Override
-          public @Nullable SoftReference<@Nullable Element<K, V>> apply(K k, SoftReference<@Nullable Element<K, V>> v) {
-            if (v.refersTo(null)) {
-              return null;
-            }
-            return v;
-          }
-        });
+        elements.computeIfPresent(key,
+            new BiFunction<K, SoftReference<@Nullable Element<K, V>>, @Nullable SoftReference<@Nullable Element<K, V>>>() {
+              @Override
+              public @Nullable SoftReference<@Nullable Element<K, V>> apply(K k,
+                  SoftReference<@Nullable Element<K, V>> v) {
+                if (v.refersTo(null)) {
+                  return null;
+                }
+                return v;
+              }
+            });
         continue;
       }
       inner.processFoundElement(e);

@@ -1,6 +1,5 @@
 package eu.aylett.arc.internal;
 
-import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.jspecify.annotations.Nullable;
