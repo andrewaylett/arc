@@ -11,11 +11,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItems;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 @SuppressWarnings({"type.arguments.not.inferred", "argument"})
 class ArcTest {
@@ -134,5 +139,37 @@ class ArcTest {
     }
     toJoin.forEach(ForkJoinTask::join);
     assertThat(recordedValues, hasItems(seen.toArray(Integer[]::new)));
+  }
+
+  @Test
+  void concurrentAccessDoesNotWaitForLoaderToFinish()
+      throws ExecutionException, InterruptedException, TimeoutException {
+    var inOneSem = new Semaphore(0);
+    var releaseOneSem = new Semaphore(0);
+    var pool = ForkJoinPool.commonPool();
+    var arc = new Arc<Integer, String>(10, s -> {
+      try {
+        return switch (s) {
+          case 1 -> {
+            inOneSem.release();
+            releaseOneSem.acquire();
+            yield "1";
+          }
+          case 2 -> {
+            releaseOneSem.release();
+            yield "2";
+          }
+          default -> s.toString();
+        };
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    }, pool);
+
+    var t1 = pool.submit(() -> arc.get(1));
+    inOneSem.release();
+    var t2 = pool.submit(() -> arc.get(2));
+    assertThat(t1.get(1, SECONDS), equalTo("1"));
+    assertThat(t2.get(1, SECONDS), equalTo("2"));
   }
 }

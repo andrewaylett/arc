@@ -87,7 +87,10 @@ spotless {
   }
 }
 
-checkstyle { toolVersion = "10.21.0" }
+checkstyle {
+  toolVersion = "10.21.0"
+  maxWarnings = 0
+}
 
 tasks.withType(JavaCompile::class) { mustRunAfter(tasks.named("spotlessJavaApply")) }
 
