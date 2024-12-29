@@ -9,11 +9,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.hasItems;
 
 @SuppressWarnings({"type.arguments.not.inferred", "argument"})
 class ArcTest {
@@ -105,5 +107,32 @@ class ArcTest {
     }
     toJoin.forEach(ForkJoinTask::join);
     assertThat(recordedValues, containsInAnyOrder(1, 2, 3, 4, 0));
+  }
+
+  @Test
+  void testParallelLoadingWithExpiry() {
+    var recordedValues = new ConcurrentLinkedDeque<Integer>();
+    var pool = ForkJoinPool.commonPool();
+    var arc = new Arc<Integer, String>(50, i -> {
+      recordedValues.add(i);
+      return i.toString();
+    }, pool, true);
+    var random = new Random(0);
+    var seen = new ArrayList<Integer>();
+
+    var toJoin = new ArrayList<ForkJoinTask<String>>();
+    for (var i = 1; i <= 50000; i++) {
+      var ii = random.nextInt(512);
+      if (!seen.contains(ii)) {
+        seen.add(ii);
+      }
+      toJoin.add(pool.submit(() -> arc.get(ii)));
+      while (toJoin.size() > random.nextInt(512)) {
+        toJoin.remove(random.nextInt(toJoin.size())).join();
+      }
+      arc.weakExpire();
+    }
+    toJoin.forEach(ForkJoinTask::join);
+    assertThat(recordedValues, hasItems(seen.toArray(Integer[]::new)));
   }
 }

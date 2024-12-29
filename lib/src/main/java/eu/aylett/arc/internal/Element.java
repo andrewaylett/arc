@@ -1,13 +1,14 @@
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.lock.qual.LockingFree;
+import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 /// The Element class represents an element in the cache. It manages the value
@@ -18,35 +19,24 @@ import java.util.function.Function;
 /// @param <V>
 ///            the type of mapped values
 public class Element<K extends @NonNull Object, V extends @NonNull Object> implements ElementBase<K, V> {
-  private final Lock lock = new ReentrantLock();
-
   /// The key associated with this element.
   private final K key;
 
   /// The function used to load values.
   private final Function<K, V> loader;
 
-  /// The ForkJoinPool used for parallel processing.
   private final ForkJoinPool pool;
 
-  /// A weak reference to the value associated with this element.
-  private @Nullable WeakReference<V> weakValue;
+  /// A weak reference to the value associated with this element, if it's been
+  /// computed.
+  private @Nullable WeakReference<@Nullable V> weakValue;
 
   /// A CompletableFuture representing the value associated with this element.
   private @Nullable CompletableFuture<V> value;
 
-  /// The location of this element in the linked list.
   public @Nullable ListLocation<K, V> listLocation;
 
-  /// Constructs a new Element with the specified key, loader function, and
-  /// ForkJoinPool.
-  ///
-  /// @param key
-  /// the key associated with this element
-  /// @param loader
-  /// the function to load values
-  /// @param pool
-  /// the ForkJoinPool for parallel processing
+  @LockingFree
   public Element(K key, Function<K, V> loader, ForkJoinPool pool) {
     this.key = key;
     this.loader = loader;
@@ -55,43 +45,28 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
 
   /// Retrieves the value associated with this element. If the value is not
   /// present, it uses the loader function to load the value.
-  ///
-  /// @return the value associated with this element
-  @SuppressWarnings("method.guarantee.violated")
-  public V get() {
-    lock.lock();
-    var locked = true;
-    var value = this.value;
-    try {
-      if (value != null) {
-        if (value.isDone()) {
-          var v = value.join();
-          this.weakValue = new WeakReference<>(v);
-          return v;
-        }
-        lock.unlock();
-        locked = false;
-        return value.join();
-      }
-      var weakValue = this.weakValue;
-      if (weakValue != null) {
-        var v = weakValue.get();
-        if (v != null) {
-          this.value = CompletableFuture.completedFuture(v);
-          return v;
-        }
-      }
-      this.weakValue = null;
-      this.value = value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
-    } finally {
-      if (locked) {
-        lock.unlock();
-      }
+  @ReleasesNoLocks
+  public CompletableFuture<V> get() {
+    var listLocation = this.listLocation;
+    if (listLocation == null || !listLocation.owner.containsValues()) {
+      throw new IllegalStateException("Called get on an object in an expired list");
     }
-    return value.join();
+    return setup();
+  }
+
+  @SideEffectFree
+  public boolean containsValue() {
+    return value != null;
+  }
+
+  @SideEffectFree
+  boolean containsWeakValue() {
+    var weakValue = this.weakValue;
+    return weakValue != null && !weakValue.refersTo(null);
   }
 
   @Override
+  @LockingFree
   public void setPrev(ElementBase<K, V> prev) {
     var listLocation = this.listLocation;
     if (listLocation != null) {
@@ -102,6 +77,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   }
 
   @Override
+  @LockingFree
   public void setNext(ElementBase<K, V> next) {
     var listLocation = this.listLocation;
     if (listLocation != null) {
@@ -111,47 +87,61 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     }
   }
 
-  /// Repositions this element in the linked list.
-  ///
-  /// @param newOwner
-  /// the new owner list for this element
+  /// Repositions this element in a linked list.
+  @ReleasesNoLocks
   public void resplice(@Nullable ElementList<K, V> newOwner) {
     var oldLocation = this.listLocation;
+    if (oldLocation != null && oldLocation.owner == newOwner) {
+      newOwner.bringToHead(this);
+      return;
+    }
     if (oldLocation != null) {
-      oldLocation.prev.setNext(oldLocation.next);
-      oldLocation.next.setPrev(oldLocation.prev);
-      oldLocation.owner.size -= 1;
+      oldLocation.owner.remove(oldLocation);
       this.listLocation = null;
     }
     if (newOwner != null) {
-      this.listLocation = new ListLocation<>(newOwner, newOwner.head.next, newOwner.head);
-      newOwner.head.next.setPrev(this);
-      newOwner.head.setNext(this);
-      newOwner.size += 1;
+      newOwner.add(this);
     }
   }
 
-  /// The ListLocation class represents the position of an element in a linked
-  /// list.
-  ///
-  /// @param <K>
-  /// the type of keys maintained by this cache
-  /// @param <V>
-  /// the type of mapped values
+  @ReleasesNoLocks
+  public CompletableFuture<V> setup() {
+    var value = this.value;
+    if (value != null) {
+      if (value.isDone()) {
+        var v = value.join();
+        var weakValue = this.weakValue;
+        if (weakValue == null || !weakValue.refersTo(v)) {
+          this.weakValue = new WeakReference<>(v);
+        }
+      }
+      return value;
+    }
+    var weakValue = this.weakValue;
+    if (weakValue != null) {
+      var v = weakValue.get();
+      if (v != null) {
+        this.value = value = CompletableFuture.completedFuture(v);
+      } else {
+        this.weakValue = null;
+      }
+    }
+    if (value == null) {
+      this.value = value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
+    }
+    var listLocation = this.listLocation;
+    if (listLocation != null && !listLocation.owner.containsValues()) {
+      throw new IllegalStateException("Called setup on an expired element");
+    }
+    return value;
+  }
+
   public static final class ListLocation<K extends @NonNull Object, V extends @NonNull Object> {
-    public ElementList<K, V> owner;
+    public final ElementList<K, V> owner;
     public ElementBase<K, V> next;
     public ElementBase<K, V> prev;
 
-    /// Constructs a new ListLocation with the specified owner, next element, and
-    /// previous element.
-    ///
-    /// @param owner
-    /// the owner list of this location
-    /// @param next
-    /// the next element in the list
-    /// @param prev
-    /// the previous element in the list
+    @LockingFree
     public ListLocation(ElementList<K, V> owner, ElementBase<K, V> next, ElementBase<K, V> prev) {
       this.owner = owner;
       this.next = next;
@@ -161,19 +151,19 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
 
   /// A "normal" expiry, leaving the weak reference but allowing the GC to collect
   /// the object if necessary.
-  @SuppressWarnings("method.guarantee.violated")
-  public void expire() {
-    lock.lock();
+  @ReleasesNoLocks
+  public void expire(@Nullable ElementList<K, V> newOwner) {
     value = null;
-    lock.unlock();
+    resplice(newOwner);
   }
 
-  /// Removes the weak reference, so if it's expired already then we'll regenerate
+  /// Removes the weak reference, so if the entry has expired already then we'll
+  /// regenerate
   /// the value.
-  @SuppressWarnings("method.guarantee.violated")
+  ///
+  /// Primarily useful for testing.
+  @LockingFree
   public void weakExpire() {
-    lock.lock();
     weakValue = null;
-    lock.unlock();
   }
 }

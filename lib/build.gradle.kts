@@ -70,6 +70,7 @@ configure<CheckerFrameworkExtension> {
       listOf(
           "org.checkerframework.checker.nullness.NullnessChecker",
           "org.checkerframework.common.initializedfields.InitializedFieldsChecker",
+          "org.checkerframework.checker.lock.LockChecker",
       )
 }
 
@@ -77,8 +78,7 @@ spotless {
   java {
     importOrder("", "java|javax|jakarta", "\\#", "\\#java|\\#javax|\\#jakarta").semanticSort()
     removeUnusedImports()
-    eclipse()
-    indentWithSpaces(2)
+    eclipse().configFile("../config/eclipse-java-formatter.xml")
     formatAnnotations()
   }
   kotlinGradle {
@@ -94,6 +94,7 @@ tasks.withType(JavaCompile::class) { mustRunAfter(tasks.named("spotlessJavaApply
 tasks.named("check").configure { dependsOn(tasks.named("spotlessCheck")) }
 
 val isCI = providers.environmentVariable("CI").isPresent
+
 if (!isCI) {
   tasks.named("spotlessCheck").configure { dependsOn(tasks.named("spotlessApply")) }
 }
@@ -130,13 +131,10 @@ pitest {
 
 val pitestReportLocation: Provider<Directory> = project.layout.buildDirectory.dir("reports/pitest")
 
-val printPitestReportLocation by tasks.registering {
-  val location = pitestReportLocation.map { it.file("index.html") }
-  doLast {
-    println("Pitest report: file://${location.get()}")
-  }
-}
+val printPitestReportLocation by
+    tasks.registering {
+      val location = pitestReportLocation.map { it.file("index.html") }
+      doLast { println("Pitest report: file://${location.get()}") }
+    }
 
-tasks.named("pitest").configure {
-  finalizedBy(printPitestReportLocation)
-}
+tasks.named("pitest").configure { finalizedBy(printPitestReportLocation) }

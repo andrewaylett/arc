@@ -2,10 +2,12 @@ package eu.aylett.arc;
 
 import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
+import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.lang.ref.SoftReference;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiFunction;
@@ -36,17 +38,21 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /// @param pool
   /// the ForkJoinPool for parallel processing
   public Arc(int capacity, Function<K, V> loader, ForkJoinPool pool) {
+    this(capacity, loader, pool, false);
+  }
+
+  Arc(int capacity, Function<K, V> loader, ForkJoinPool pool, boolean safetyChecks) {
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc<>(capacity);
+    inner = new InnerArc<>(capacity, safetyChecks);
   }
 
   /// The map of elements stored in the cache.
   private final ConcurrentHashMap<K, SoftReference<@Nullable Element<K, V>>> elements;
 
   /// The inner cache mechanism.
-  private final InnerArc<K, V> inner;
+  private final @GuardedBy("<self>") InnerArc<K, V> inner;
 
   /// Removes all the weak references, so objects that have expired out of the
   /// strong cache will be regenerated.
@@ -59,6 +65,9 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
       var element = elementSoftReference.get();
       if (element != null) {
         element.weakExpire();
+        if (!element.containsValue()) {
+          elementSoftReference.clear();
+        }
       }
     });
   }
@@ -71,12 +80,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /// @return the value associated with the specified key
   public V get(K key) {
     while (true) {
-      var newElement = new Element<>(key, loader, pool);
-      var ref = elements.computeIfAbsent(key, k -> new SoftReference<>(newElement));
-      if (ref.refersTo(newElement)) {
-        inner.enqueueNewElement(newElement);
-        return newElement.get();
-      }
+      var ref = elements.computeIfAbsent(key, k -> new SoftReference<>(new Element<>(key, loader, pool)));
       var e = ref.get();
       if (e == null) {
         // Remove if expired and not already removed/replaced
@@ -93,8 +97,11 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
             });
         continue;
       }
-      inner.processFoundElement(e);
-      return e.get();
+      CompletableFuture<V> completableFuture;
+      synchronized (inner) {
+        completableFuture = inner.processElement(e);
+      }
+      return completableFuture.join();
     }
   }
 }

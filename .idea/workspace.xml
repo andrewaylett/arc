@@ -58,6 +58,8 @@
         <option value="JUnit5 Test Class" />
         <option value="package-info" />
         <option value="module-info" />
+        <option value="Interface" />
+        <option value="Enum" />
         <option value="Class" />
       </list>
     </option>
@@ -69,6 +71,7 @@
     <setting file="jar://$USER_HOME$/.asdf/installs/java/temurin-21.0.0+35.0.LTS/lib/src.zip!/java.base/java/lang/invoke/VarHandle.java" root0="SKIP_INSPECTION" />
     <setting file="jar://$USER_HOME$/.asdf/installs/java/temurin-21.0.0+35.0.LTS/lib/src.zip!/java.base/java/util/concurrent/CompletableFuture.java" root0="SKIP_INSPECTION" />
     <setting file="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-qual/3.48.0/df153d27218bcf737bf9d68d50a2464ee616265b/checker-qual-3.48.0-sources.jar!/org/checkerframework/dataflow/qual/Deterministic.java" root0="SKIP_INSPECTION" />
+    <setting file="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-qual/3.48.3/633bde0ef1e61829441ea1dab1e2442564ddac83/checker-qual-3.48.3-sources.jar!/org/checkerframework/checker/lock/qual/GuardSatisfied.java" root0="SKIP_INSPECTION" />
   </component>
   <component name="ProblemsViewState">
     <option name="selectedTabId" value="CurrentFile" />
@@ -81,12 +84,12 @@
   <component name="ProjectViewState">
     <option name="autoscrollFromSource" value="true" />
     <option name="showLibraryContents" value="true" />
-    <option name="showMembers" value="true" />
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Gradle.ArcTest.executor": "Run",
     "Gradle.ArcTest.testParallelLoading.executor": "Run",
+    "Gradle.ArcTest.testParallelLoadingWithExpiry.executor": "Run",
     "Gradle.arc [check].executor": "Run",
     "Gradle.arc [pitest].executor": "Run",
     "Gradle.arc [printVersion].executor": "Run",
@@ -111,12 +114,14 @@
   "keyToStringList": {
     "GitStage.ChangesTree.GroupingKeys": [
       "directory",
-      "module",
       "repository"
     ]
   }
 }]]></component>
   <component name="RecentsManager">
+    <key name="CreateClassDialog.RecentsKey">
+      <recent name="eu.aylett.arc.internal" />
+    </key>
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/lib/src/main/java/eu/aylett/arc/internal" />
@@ -132,7 +137,7 @@
       <recent name="eu.aylett.arc" />
     </key>
   </component>
-  <component name="RunManager" selected="Gradle.arc [pitest]">
+  <component name="RunManager" selected="Gradle.arc [check]">
     <configuration name="ArcTest" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -171,6 +176,30 @@
             <option value=":lib:test" />
             <option value="--tests" />
             <option value="&quot;eu.aylett.arc.ArcTest.testParallelLoading&quot;" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>false</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>true</RunAsTest>
+      <method v="2" />
+    </configuration>
+    <configuration name="ArcTest.testParallelLoadingWithExpiry" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" value="" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value=":lib:test" />
+            <option value="--tests" />
+            <option value="&quot;eu.aylett.arc.ArcTest.testParallelLoadingWithExpiry&quot;" />
           </list>
         </option>
         <option name="vmOptions" />
@@ -225,50 +254,28 @@
       <RunAsTest>false</RunAsTest>
       <method v="2" />
     </configuration>
-    <configuration name="arc [spotlessApply]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
-      <ExternalSystemSettings>
-        <option name="executionName" />
-        <option name="externalProjectPath" value="$PROJECT_DIR$" />
-        <option name="externalSystemIdString" value="GRADLE" />
-        <option name="scriptParameters" />
-        <option name="taskDescriptions">
-          <list />
-        </option>
-        <option name="taskNames">
-          <list>
-            <option value="spotlessApply" />
-          </list>
-        </option>
-        <option name="vmOptions" />
-      </ExternalSystemSettings>
-      <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
-      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
-      <DebugAllEnabled>false</DebugAllEnabled>
-      <RunAsTest>false</RunAsTest>
-      <method v="2" />
-    </configuration>
     <list>
       <item itemvalue="Gradle.ArcTest.testParallelLoading" />
+      <item itemvalue="Gradle.ArcTest.testParallelLoadingWithExpiry" />
       <item itemvalue="Gradle.arc [pitest]" />
       <item itemvalue="Gradle.arc [check]" />
-      <item itemvalue="Gradle.arc [spotlessApply]" />
       <item itemvalue="Gradle.ArcTest" />
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.arc [pitest]" />
         <item itemvalue="Gradle.arc [check]" />
+        <item itemvalue="Gradle.ArcTest.testParallelLoadingWithExpiry" />
+        <item itemvalue="Gradle.arc [pitest]" />
         <item itemvalue="Gradle.ArcTest.testParallelLoading" />
         <item itemvalue="Gradle.ArcTest" />
-        <item itemvalue="Gradle.arc [spotlessApply]" />
       </list>
     </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-9823dce3aa75-fdfe4dae3a2d-intellij.indexing.shared.core-IU-243.22562.145" />
-        <option value="bundled-js-predefined-d6986cc7102b-deb605915726-JavaScript-IU-243.22562.145" />
+        <option value="bundled-jdk-9823dce3aa75-fdfe4dae3a2d-intellij.indexing.shared.core-IU-243.22562.218" />
+        <option value="bundled-js-predefined-d6986cc7102b-deb605915726-JavaScript-IU-243.22562.218" />
       </set>
     </attachedChunks>
   </component>
@@ -282,7 +289,8 @@
       <updated>1734275975772</updated>
       <workItem from="1734275981373" duration="24565000" />
       <workItem from="1734386253171" duration="7085000" />
-      <workItem from="1734630962362" duration="7752000" />
+      <workItem from="1734630962362" duration="34392000" />
+      <workItem from="1735240835826" duration="10892000" />
     </task>
     <task id="LOCAL-00001" summary="Basic not-very-thread-safe Arc">
       <option name="closed" value="true" />
@@ -332,7 +340,15 @@
       <option name="project" value="LOCAL" />
       <updated>1734475836394</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="Add Checkstyle and PiTest">
+      <option name="closed" value="true" />
+      <created>1734793520857</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1734793520857</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -344,15 +360,21 @@
     <MESSAGE value="Checker Framework -- nullness" />
     <MESSAGE value="Serialise access to the queues" />
     <MESSAGE value="Format with Spotless and Eclipse" />
-    <option name="LAST_COMMIT_MESSAGE" value="Format with Spotless and Eclipse" />
+    <MESSAGE value="Add Checkstyle and PiTest" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add Checkstyle and PiTest" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" type="java-line">
-          <url>file://$PROJECT_DIR$/lib/src/test/java/eu/aylett/arc/ArcTest.java</url>
-          <line>106</line>
-          <option name="timeStamp" value="1" />
+          <url>file://$PROJECT_DIR$/lib/src/main/java/eu/aylett/arc/internal/ElementList.java</url>
+          <line>84</line>
+          <option name="timeStamp" value="8" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/lib/src/main/java/eu/aylett/arc/internal/ElementList.java</url>
+          <line>96</line>
+          <option name="timeStamp" value="9" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

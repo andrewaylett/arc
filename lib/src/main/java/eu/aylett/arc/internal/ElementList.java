@@ -1,6 +1,10 @@
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.lock.qual.GuardSatisfied;
+import org.checkerframework.checker.lock.qual.LockingFree;
+import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
 /// The ElementList class represents a doubly linked list used to manage elements
@@ -16,28 +20,24 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   /// The maximum capacity to set.
   private final int maxCapacity;
 
-  /// The maximum number of elements the list can hold.
+  private final String name;
+  private final boolean safetyChecks;
+  /// The maximum number of elements the list may hold.
   private int capacity;
 
   /// The target list for expired elements.
   private final @Nullable ElementList<K, V> expiryTarget;
 
-  /// The head element of the list.
   final HeadElement<K, V> head;
 
-  /// The tail element of the list.
   private final TailElement<K, V> tail;
 
   /// The current number of elements in the list.
-  public int size;
+  private int size;
 
-  /// Constructs a new ElementList with the specified capacity and expiry target.
-  ///
-  /// @param capacity
-  /// the maximum number of elements the list can hold
-  /// @param expiryTarget
-  /// the target list for expired elements
-  public ElementList(int capacity, @Nullable ElementList<K, V> expiryTarget) {
+  @LockingFree
+  public ElementList(String name, int capacity, @Nullable ElementList<K, V> expiryTarget, boolean safetyChecks) {
+    this.name = name;
     this.capacity = capacity;
     this.maxCapacity = (capacity * 2) - 1;
     this.expiryTarget = expiryTarget;
@@ -47,13 +47,67 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     tail.setPrev(head);
     this.head = head;
     this.tail = tail;
-    size = 0;
+    this.safetyChecks = safetyChecks;
+  }
+
+  @ReleasesNoLocks
+  public void add(Element<K, V> kvElement) {
+    if (expiryTarget == null && kvElement.containsValue()) {
+      throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + kvElement);
+    }
+    kvElement.listLocation = new Element.ListLocation<>(this, head.next, this.head);
+    head.next.setPrev(kvElement);
+    head.setNext(kvElement);
+    size += 1;
+    evict();
+  }
+
+  @SideEffectFree
+  public void checkSafety(boolean sizeCheck) {
+    if (!this.safetyChecks) {
+      return;
+    }
+
+    var seen = 0;
+    var e = this.head.next;
+    while (e instanceof Element<K, V> element) {
+      seen++;
+      var listLocation = element.listLocation;
+      if (listLocation == null) {
+        throw new IllegalStateException("Element not owned: " + element);
+      } else if (listLocation.owner != this) {
+        throw new IllegalStateException("Element owned by wrong list: " + element);
+      }
+      if (expiryTarget != null && !element.containsValue() && element.containsWeakValue()) {
+        throw new IllegalStateException("Element in LRU list has only weak value: " + element);
+      }
+      if (expiryTarget == null && element.containsValue()) {
+        throw new IllegalStateException("Element in expired list has a value: " + element);
+      }
+      e = listLocation.next;
+    }
+    if (e != this.tail) {
+      throw new IllegalStateException("Did not reach our list tail, but: " + e);
+    }
+    if (seen != this.size) {
+      throw new IllegalStateException("Size mismatch: found " + seen + " items != expected " + this.size);
+    }
+
+    if (sizeCheck && size > capacity) {
+      throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
+    }
+  }
+
+  @SideEffectFree
+  public boolean containsValues() {
+    return expiryTarget != null;
   }
 
   /// Increases the capacity of the list and adds a new element.
   ///
   /// @param newElement
   /// the new element to add
+  @ReleasesNoLocks
   public void grow(Element<K, V> newElement) {
     this.capacity = Math.min(this.capacity + 1, this.maxCapacity);
     push(newElement);
@@ -64,26 +118,67 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   ///
   /// @param newElement
   /// the new element to add
+  @ReleasesNoLocks
   public void push(Element<K, V> newElement) {
     newElement.resplice(this);
     evict();
   }
 
+  @LockingFree
+  public void remove(Element.ListLocation<K, V> oldLocation) {
+    if (oldLocation.owner != this) {
+      throw new IllegalStateException("Element owned by wrong list: " + oldLocation);
+    }
+    oldLocation.prev.setNext(oldLocation.next);
+    oldLocation.next.setPrev(oldLocation.prev);
+    this.size -= 1;
+  }
+
+  @LockingFree
+  public void bringToHead(Element<K, V> element) {
+    var oldLocation = element.listLocation;
+    if (oldLocation == null || oldLocation.owner != this) {
+      throw new IllegalStateException("Element not owned by this list: " + element);
+    }
+    oldLocation.prev.setNext(oldLocation.next);
+    oldLocation.next.setPrev(oldLocation.prev);
+    oldLocation.next = this.head.next;
+    oldLocation.prev = this.head;
+    this.head.next.setPrev(element);
+    this.head.setNext(element);
+  }
+
   /// Decreases the capacity of the list and evicts elements if necessary.
-  public void shrink() {
+  @ReleasesNoLocks
+  public boolean shrink() {
+    var shrunk = this.capacity > 1;
     this.capacity = Math.max(this.capacity - 1, 1);
     evict();
+    return shrunk;
   }
 
   /// Evicts the least recently used element if the list exceeds its capacity.
-  @SuppressWarnings("method.guarantee.violated")
-  private void evict() {
-    if (this.size > this.capacity) {
+  @ReleasesNoLocks
+  void evict() {
+    while (this.size > this.capacity) {
+      checkSafety(false);
       var victim = this.tail.prev;
       if (victim instanceof Element<K, V> element) {
-        element.expire();
-        element.resplice(this.expiryTarget);
+        element.expire(this.expiryTarget);
+      } else {
+        throw new IllegalStateException("Attempted to expire a head or tail: " + victim);
       }
     }
+  }
+
+  @SideEffectFree
+  @Override
+  public String toString(@GuardSatisfied ElementList<K, V> this) {
+    return "ElementList-" + this.name + " (" + this.size + "/" + this.capacity + ")";
+  }
+
+  @SideEffectFree
+  public int getCapacity() {
+    return this.capacity;
   }
 }
