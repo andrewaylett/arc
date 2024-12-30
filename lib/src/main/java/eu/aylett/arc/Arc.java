@@ -29,41 +29,51 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-/// The Arc class provides a cache mechanism with a specified capacity. It uses a
-/// loader function to load values and a ForkJoinPool for parallel processing.
-///
-/// @param <K>
-///            the type of keys maintained by this cache
-/// @param <V>
-///            the type of mapped values
+/**
+ * The Arc class provides a cache mechanism with a specified capacity. It uses a
+ * loader function to load values and a ForkJoinPool for parallel processing.
+ *
+ * @param <K>
+ *          the type of keys maintained by this cache
+ * @param <V>
+ *          the type of mapped values
+ */
 public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
 
-  /// The function used to load values.
+  /**
+   * The function used to load values.
+   */
   private final Function<K, V> loader;
 
-  /// The ForkJoinPool used for parallel processing.
+  /**
+   * The ForkJoinPool used for parallel processing.
+   */
   private final ForkJoinPool pool;
 
-  /// Constructs a new Arc with the specified capacity, loader function, and
-  /// the common ForkJoinPool.
-  ///
-  /// @param capacity
-  /// the maximum number of elements the cache can hold
-  /// @param loader
-  /// the function to load values
+  /**
+   * Constructs a new Arc with the specified capacity, loader function, and the
+   * common ForkJoinPool.
+   *
+   * @param capacity
+   *          the maximum number of elements the cache can hold
+   * @param loader
+   *          the function to load values
+   */
   public Arc(int capacity, Function<K, V> loader) {
     this(capacity, loader, ForkJoinPool.commonPool(), false);
   }
 
-  /// Constructs a new Arc with the specified capacity, loader function, and
-  /// ForkJoinPool.
-  ///
-  /// @param capacity
-  /// the maximum number of elements the cache can hold
-  /// @param loader
-  /// the function to load values
-  /// @param pool
-  /// the ForkJoinPool that the loader will be submitted to
+  /**
+   * Constructs a new Arc with the specified capacity, loader function, and
+   * ForkJoinPool.
+   *
+   * @param capacity
+   *          the maximum number of elements the cache can hold
+   * @param loader
+   *          the function to load values
+   * @param pool
+   *          the ForkJoinPool that the loader will be submitted to
+   */
   public Arc(int capacity, Function<K, V> loader, ForkJoinPool pool) {
     this(capacity, loader, pool, false);
   }
@@ -75,18 +85,23 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     inner = new InnerArc<>(Math.max(capacity / 2, 1), safetyChecks);
   }
 
-  /// The map of elements stored in the cache.
+  /**
+   * The map of elements stored in the cache.
+   */
   private final ConcurrentHashMap<K, SoftReference<@Nullable Element<K, V>>> elements;
 
-  /// The inner cache mechanism.
+  /**
+   * The inner cache mechanism.
+   */
   private final @GuardedBy("<self>") InnerArc<K, V> inner;
 
-  /// Removes all the weak references, so objects that have expired out of the
-  /// strong cache will be regenerated.
-  ///
-  /// Without this, we may retain references to expired objects that have yet to
-  /// be GC'd.
-  /// Primarily useful for testing.
+  /**
+   * Removes all the weak references, so objects that have expired out of the
+   * strong cache will be regenerated.
+   * <p>
+   * Without this, we may retain references to expired objects that have yet to be
+   * GC'd. Primarily useful for testing.
+   */
   public void weakExpire() {
     elements.values().forEach(elementSoftReference -> {
       var element = elementSoftReference.get();
@@ -99,12 +114,14 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     });
   }
 
-  /// Retrieves the value associated with the specified key. If the key is not
-  /// present, it uses the loader function to load the value.
-  ///
-  /// @param key
-  /// the key whose associated value is to be returned
-  /// @return the value associated with the specified key
+  /**
+   * Retrieves the value associated with the specified key. If the key is not
+   * present, it uses the loader function to load the value.
+   *
+   * @param key
+   *          the key whose associated value is to be returned
+   * @return the value associated with the specified key
+   */
   public V get(K key) {
     while (true) {
       var ref = elements.computeIfAbsent(key, k -> new SoftReference<>(new Element<>(key, loader, pool)));

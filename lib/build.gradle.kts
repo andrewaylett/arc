@@ -14,6 +14,7 @@ plugins {
   `java-library`
   `jvm-test-suite`
   `maven-publish`
+  signing
   id("eu.aylett.conventions") version "0.4.0"
   id("eu.aylett.plugins.version") version "0.4.0"
   id("org.checkerframework") version "0.6.47"
@@ -47,6 +48,11 @@ dependencies {
   pitest("com.groupcdg.pitest:pitest-accelerator-junit5:1.0.6")
   pitest("com.groupcdg:pitest-git-plugin:1.1.4")
   pitest("com.groupcdg.pitest:pitest-kotlin-plugin:1.1.6")
+}
+
+java {
+  withSourcesJar()
+  withJavadocJar()
 }
 
 testing {
@@ -155,4 +161,29 @@ publishing {
       }
     }
   }
+  repositories {
+    maven {
+      name = "Sonatype"
+      url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+      credentials {
+        username = System.getenv("SONATYPE_USERNAME")
+        password = System.getenv("SONATYPE_PASSWORD")
+      }
+    }
+  }
+  publications {
+    create<MavenPublication>("java") {
+      groupId = project.group.toString()
+      artifactId = "arc"
+
+      from(components["java"])
+    }
+  }
+}
+
+signing {
+  val signingKey: String? by project
+  val signingPassword: String? by project
+  useInMemoryPgpKeys(signingKey, signingPassword)
+  sign(publishing.publications["java"])
 }
