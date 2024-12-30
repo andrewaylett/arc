@@ -144,7 +144,6 @@ val printPitestReportLocation by
 
 tasks.named("pitest").configure { finalizedBy(printPitestReportLocation) }
 
-
 publishing {
   repositories {
     maven {
