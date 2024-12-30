@@ -61,7 +61,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     if (e == null) {
       return null;
     }
-    var listLocation = e.listLocation;
+    var listLocation = e.getListLocation();
     if (listLocation == null) {
       // New (or at least expired out of the cache) after all
       return null;

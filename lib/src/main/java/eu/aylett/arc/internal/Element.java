@@ -1,5 +1,6 @@
 package eu.aylett.arc.internal;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
@@ -34,9 +35,10 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   /// A CompletableFuture representing the value associated with this element.
   private @Nullable CompletableFuture<V> value;
 
-  public @Nullable ListLocation<K, V> listLocation;
+  private @Nullable ListLocation<K, V> listLocation;
 
   @LockingFree
+  @SuppressFBWarnings("EI_EXPOSE_REP")
   public Element(K key, Function<K, V> loader, ForkJoinPool pool) {
     this.key = key;
     this.loader = loader;
@@ -46,7 +48,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   /// Retrieves the value associated with this element. If the value is not
   /// present, it uses the loader function to load the value.
   @ReleasesNoLocks
-  public CompletableFuture<V> get() {
+  CompletableFuture<V> get() {
     var listLocation = this.listLocation;
     if (listLocation == null || !listLocation.owner.containsValues()) {
       throw new IllegalStateException("Called get on an object in an expired list");
@@ -63,6 +65,16 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   boolean containsWeakValue() {
     var weakValue = this.weakValue;
     return weakValue != null && !weakValue.refersTo(null);
+  }
+
+  @SideEffectFree
+  @Nullable ListLocation<K, V> getListLocation() {
+    return listLocation;
+  }
+
+  @LockingFree
+  void setListLocation(ListLocation<K, V> listLocation) {
+    this.listLocation = listLocation;
   }
 
   @Override
@@ -89,7 +101,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
 
   /// Repositions this element in a linked list.
   @ReleasesNoLocks
-  public void resplice(@Nullable ElementList<K, V> newOwner) {
+  void resplice(@Nullable ElementList<K, V> newOwner) {
     var oldLocation = this.listLocation;
     if (oldLocation != null && oldLocation.owner == newOwner) {
       newOwner.bringToHead(this);
@@ -105,7 +117,8 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   }
 
   @ReleasesNoLocks
-  public CompletableFuture<V> setup() {
+  @SuppressFBWarnings("EI_EXPOSE_REP")
+  CompletableFuture<V> setup() {
     var value = this.value;
     if (value != null) {
       if (value.isDone()) {
@@ -136,13 +149,13 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     return value;
   }
 
-  public static final class ListLocation<K extends @NonNull Object, V extends @NonNull Object> {
-    public final ElementList<K, V> owner;
-    public ElementBase<K, V> next;
-    public ElementBase<K, V> prev;
+  static final class ListLocation<K extends @NonNull Object, V extends @NonNull Object> {
+    final ElementList<K, V> owner;
+    ElementBase<K, V> next;
+    ElementBase<K, V> prev;
 
     @LockingFree
-    public ListLocation(ElementList<K, V> owner, ElementBase<K, V> next, ElementBase<K, V> prev) {
+    ListLocation(ElementList<K, V> owner, ElementBase<K, V> next, ElementBase<K, V> prev) {
       this.owner = owner;
       this.next = next;
       this.prev = prev;
@@ -152,7 +165,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   /// A "normal" expiry, leaving the weak reference but allowing the GC to collect
   /// the object if necessary.
   @ReleasesNoLocks
-  public void expire(@Nullable ElementList<K, V> newOwner) {
+  void expire(@Nullable ElementList<K, V> newOwner) {
     value = null;
     resplice(newOwner);
   }

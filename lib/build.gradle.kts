@@ -21,6 +21,7 @@ plugins {
   checkstyle
   id("info.solidsoft.pitest") version "1.15.0"
   id("com.groupcdg.pitest.github") version "1.0.7"
+  id("com.github.spotbugs") version "6.0.27"
 }
 
 version = aylett.versions.gitVersion()
@@ -33,8 +34,9 @@ repositories {
 }
 
 dependencies {
-  api(libs.jspecify)
-  api(libs.checkerframework.qual)
+  implementation(libs.jspecify)
+  implementation(libs.checkerframework.qual)
+  implementation(libs.spotbugs.annotations)
   testImplementation(libs.hamcrest)
 
   checkerFramework(libs.checkerframework)

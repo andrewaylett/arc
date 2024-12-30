@@ -1,5 +1,6 @@
 package eu.aylett.arc.internal;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
@@ -15,7 +16,7 @@ import org.jspecify.annotations.Nullable;
 ///            the type of keys maintained by this cache
 /// @param <V>
 ///            the type of mapped values
-public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
+class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
   /// The maximum capacity to set.
   private final int maxCapacity;
@@ -28,7 +29,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   /// The target list for expired elements.
   private final @Nullable ElementList<K, V> expiryTarget;
 
-  final HeadElement<K, V> head;
+  private final HeadElement<K, V> head;
 
   private final TailElement<K, V> tail;
 
@@ -36,7 +37,8 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   private int size;
 
   @LockingFree
-  public ElementList(String name, int capacity, @Nullable ElementList<K, V> expiryTarget, boolean safetyChecks) {
+  @SuppressFBWarnings("EI_EXPOSE_REP")
+  ElementList(String name, int capacity, @Nullable ElementList<K, V> expiryTarget, boolean safetyChecks) {
     this.name = name;
     this.capacity = capacity;
     this.maxCapacity = (capacity * 2) - 1;
@@ -51,11 +53,11 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @ReleasesNoLocks
-  public void add(Element<K, V> kvElement) {
+  void add(Element<K, V> kvElement) {
     if (expiryTarget == null && kvElement.containsValue()) {
       throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + kvElement);
     }
-    kvElement.listLocation = new Element.ListLocation<>(this, head.next, this.head);
+    kvElement.setListLocation(new Element.ListLocation<>(this, head.next, this.head));
     head.next.setPrev(kvElement);
     head.setNext(kvElement);
     size += 1;
@@ -63,7 +65,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @SideEffectFree
-  public void checkSafety(boolean sizeCheck) {
+  void checkSafety(boolean sizeCheck) {
     if (!this.safetyChecks) {
       return;
     }
@@ -72,7 +74,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     var e = this.head.next;
     while (e instanceof Element<K, V> element) {
       seen++;
-      var listLocation = element.listLocation;
+      var listLocation = element.getListLocation();
       if (listLocation == null) {
         throw new IllegalStateException("Element not owned: " + element);
       } else if (listLocation.owner != this) {
@@ -99,7 +101,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @SideEffectFree
-  public boolean containsValues() {
+  boolean containsValues() {
     return expiryTarget != null;
   }
 
@@ -108,7 +110,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   /// @param newElement
   /// the new element to add
   @ReleasesNoLocks
-  public void grow(Element<K, V> newElement) {
+  void grow(Element<K, V> newElement) {
     this.capacity = Math.min(this.capacity + 1, this.maxCapacity);
     push(newElement);
   }
@@ -119,13 +121,13 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   /// @param newElement
   /// the new element to add
   @ReleasesNoLocks
-  public void push(Element<K, V> newElement) {
+  void push(Element<K, V> newElement) {
     newElement.resplice(this);
     evict();
   }
 
   @LockingFree
-  public void remove(Element.ListLocation<K, V> oldLocation) {
+  void remove(Element.ListLocation<K, V> oldLocation) {
     if (oldLocation.owner != this) {
       throw new IllegalStateException("Element owned by wrong list: " + oldLocation);
     }
@@ -135,8 +137,8 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @LockingFree
-  public void bringToHead(Element<K, V> element) {
-    var oldLocation = element.listLocation;
+  void bringToHead(Element<K, V> element) {
+    var oldLocation = element.getListLocation();
     if (oldLocation == null || oldLocation.owner != this) {
       throw new IllegalStateException("Element not owned by this list: " + element);
     }
@@ -150,7 +152,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
   /// Decreases the capacity of the list and evicts elements if necessary.
   @ReleasesNoLocks
-  public boolean shrink() {
+  boolean shrink() {
     var shrunk = this.capacity > 1;
     this.capacity = Math.max(this.capacity - 1, 1);
     evict();
@@ -178,7 +180,7 @@ public class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @SideEffectFree
-  public int getCapacity() {
+  int getCapacity() {
     return this.capacity;
   }
 }

@@ -5,9 +5,11 @@
 jspecify = "1.0.0"
 hamcrest = "2.2"
 checkerframework = "3.48.3"
+spotbugs = "4.8.6"
 
 [libraries]
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 hamcrest = { module = "org.hamcrest:hamcrest", version.ref = "hamcrest" }
 checkerframework-qual = { module = "org.checkerframework:checker-qual", version.ref = "checkerframework" }
 checkerframework = { module = "org.checkerframework:checker", version.ref = "checkerframework" }
+spotbugs-annotations = { module = "com.github.spotbugs:spotbugs-annotations", version.ref = "spotbugs" }
