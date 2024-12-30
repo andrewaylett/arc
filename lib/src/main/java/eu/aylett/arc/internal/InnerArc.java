@@ -27,40 +27,55 @@ import org.checkerframework.framework.qual.CFComment;
 
 import java.util.concurrent.CompletableFuture;
 
-/// The InnerArc class manages the internal cache mechanism for the Arc class. It
-/// maintains multiple lists to track elements based on their usage patterns.
-///
-/// @param <K>
-///            the type of keys maintained by this cache
-/// @param <V>
-///            the type of mapped values
+/**
+ * The InnerArc class manages the internal cache mechanism for the Arc class. It
+ * maintains multiple lists to track elements based on their usage patterns.
+ *
+ * @param <K>
+ *          the type of keys maintained by this cache
+ * @param <V>
+ *          the type of mapped values
+ */
 public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
 
-  /// The list of elements seen once, managed as a Least Recently Used (LRU)
-  /// cache.
+  /**
+   * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
+   */
   private final @GuardedBy("this") ElementList<K, V> seenOnceLRU;
 
-  /// Elements seen multiple times, managed as a Least Recently Used (LRU) cache.
+  /**
+   * Elements seen multiple times, managed as a Least Recently Used (LRU) cache.
+   */
   private final @GuardedBy("this") ElementList<K, V> seenMultiLRU;
 
-  /// Elements seen once, that have expired out of the main cache but may inform
-  /// future adaptivity.
+  /**
+   * Elements seen once, that have expired out of the main cache but may inform
+   * future adaptivity.
+   */
   private final @GuardedBy("this") ElementList<K, V> seenOnceExpiring;
 
-  /// Elements seen multiple times, that have expired out of the main cache but
-  /// may inform future adaptivity.
+  /**
+   * Elements seen multiple times, that have expired out of the main cache but may
+   * inform future adaptivity.
+   */
   private final @GuardedBy("this") ElementList<K, V> seenMultiExpiring;
   private final int initialCapacity;
 
-  /// The target size for the seen-once LRU list.
+  /**
+   * The target size for the seen-once LRU list.
+   */
   private int targetSeenOnceCapacity;
   private final boolean safetyChecks;
 
-  /// Constructs a new InnerArc with the specified capacity.
-  ///
-  /// @param capacity the maximum number of elements the cache can hold
-  /// @param safetyChecks whether to check the cache's internal consistency after
-  /// every operation
+  /**
+   * Constructs a new InnerArc with the specified capacity.
+   *
+   * @param capacity
+   *          the maximum number of elements the cache can hold
+   * @param safetyChecks
+   *          whether to check the cache's internal consistency after every
+   *          operation
+   */
   public InnerArc(int capacity, boolean safetyChecks) {
     initialCapacity = capacity;
     seenOnceExpiring = new ElementList<>("seenOnceExpiring", capacity, null, safetyChecks);
@@ -94,8 +109,10 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     }
   }
 
-  /// Processes an element that was found in the cache. Updates the element's
-  /// position in the appropriate list based on its usage.
+  /**
+   * Processes an element that was found in the cache. Updates the element's
+   * position in the appropriate list based on its usage.
+   */
   @ReleasesNoLocks
   @Holding("this")
   @SuppressWarnings("method.invocation")
@@ -135,11 +152,13 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     }
   }
 
-  /// Enqueues a new element into the cache. Adjusts the size of the LRU lists to
-  /// maintain the target size.
-  ///
-  /// @param newElement
-  /// the new element to enqueue
+  /**
+   * Enqueues a new element into the cache. Adjusts the size of the LRU lists to
+   * maintain the target size.
+   *
+   * @param newElement
+   *          the new element to enqueue
+   */
   @ReleasesNoLocks
   @Holding("this")
   @SuppressWarnings("method.invocation")

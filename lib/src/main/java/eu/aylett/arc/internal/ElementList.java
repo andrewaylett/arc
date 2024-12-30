@@ -24,32 +24,34 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
-/// The ElementList class represents a doubly linked list used to manage elements
-/// in the cache. It supports operations to grow, shrink, and evict elements
-/// based on the list's capacity.
-///
-/// @param <K>
-///            the type of keys maintained by this cache
-/// @param <V>
-///            the type of mapped values
+/**
+ * The ElementList class represents a doubly linked list used to manage elements
+ * in the cache. It supports operations to grow, shrink, and evict elements
+ * based on the list's capacity.
+ *
+ * @param <K>
+ *          the type of keys maintained by this cache
+ * @param <V>
+ *          the type of mapped values
+ */
 class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
-  /// The maximum capacity to set.
+  /** The maximum capacity to set. */
   private final int maxCapacity;
 
   private final String name;
   private final boolean safetyChecks;
-  /// The maximum number of elements the list may hold.
+  /** The maximum number of elements the list may hold. */
   private int capacity;
 
-  /// The target list for expired elements.
+  /** The target list for expired elements. */
   private final @Nullable ElementList<K, V> expiryTarget;
 
   private final HeadElement<K, V> head;
 
   private final TailElement<K, V> tail;
 
-  /// The current number of elements in the list.
+  /** The current number of elements in the list. */
   private int size;
 
   @LockingFree
@@ -121,21 +123,25 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     return expiryTarget != null;
   }
 
-  /// Increases the capacity of the list and adds a new element.
-  ///
-  /// @param newElement
-  /// the new element to add
+  /**
+   * Increases the capacity of the list and adds a new element.
+   *
+   * @param newElement
+   *          the new element to add
+   */
   @ReleasesNoLocks
   void grow(Element<K, V> newElement) {
     this.capacity = Math.min(this.capacity + 1, this.maxCapacity);
     push(newElement);
   }
 
-  /// Adds a new element to the list. If the list exceeds its capacity, it evicts
-  /// the least recently used element.
-  ///
-  /// @param newElement
-  /// the new element to add
+  /**
+   * Adds a new element to the list. If the list exceeds its capacity, it evicts
+   * the least recently used element.
+   *
+   * @param newElement
+   *          the new element to add
+   */
   @ReleasesNoLocks
   void push(Element<K, V> newElement) {
     newElement.resplice(this);
@@ -166,7 +172,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     this.head.setNext(element);
   }
 
-  /// Decreases the capacity of the list and evicts elements if necessary.
+  /** Decreases the capacity of the list and evicts elements if necessary. */
   @ReleasesNoLocks
   boolean shrink() {
     var shrunk = this.capacity > 1;
@@ -175,7 +181,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     return shrunk;
   }
 
-  /// Evicts the least recently used element if the list exceeds its capacity.
+  /** Evicts the least recently used element if the list exceeds its capacity. */
   @ReleasesNoLocks
   void evict() {
     while (this.size > this.capacity) {

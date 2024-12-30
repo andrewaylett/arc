@@ -28,27 +28,31 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 
-/// The Element class represents an element in the cache. It manages the value
-/// associated with a key and its position in the cache's linked lists.
-///
-/// @param <K>
-///            the type of keys maintained by this cache
-/// @param <V>
-///            the type of mapped values
+/**
+ * The Element class represents an element in the cache. It manages the value
+ * associated with a key and its position in the cache's linked lists.
+ *
+ * @param <K>
+ *          the type of keys maintained by this cache
+ * @param <V>
+ *          the type of mapped values
+ */
 public class Element<K extends @NonNull Object, V extends @NonNull Object> implements ElementBase<K, V> {
-  /// The key associated with this element.
+  /** The key associated with this element. */
   private final K key;
 
-  /// The function used to load values.
+  /** The function used to load values. */
   private final Function<K, V> loader;
 
   private final ForkJoinPool pool;
 
-  /// A weak reference to the value associated with this element, if it's been
-  /// computed.
+  /**
+   * A weak reference to the value associated with this element, if it's been
+   * computed.
+   */
   private @Nullable WeakReference<@Nullable V> weakValue;
 
-  /// A CompletableFuture representing the value associated with this element.
+  /** A CompletableFuture representing the value associated with this element. */
   private @Nullable CompletableFuture<V> value;
 
   private @Nullable ListLocation<K, V> listLocation;
@@ -61,8 +65,10 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     this.pool = pool;
   }
 
-  /// Retrieves the value associated with this element. If the value is not
-  /// present, it uses the loader function to load the value.
+  /**
+   * Retrieves the value associated with this element. If the value is not
+   * present, it uses the loader function to load the value.
+   */
   @ReleasesNoLocks
   CompletableFuture<V> get() {
     var listLocation = this.listLocation;
@@ -115,7 +121,7 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     }
   }
 
-  /// Repositions this element in a linked list.
+  /** Repositions this element in a linked list. */
   @ReleasesNoLocks
   void resplice(@Nullable ElementList<K, V> newOwner) {
     var oldLocation = this.listLocation;
@@ -178,19 +184,22 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     }
   }
 
-  /// A "normal" expiry, leaving the weak reference but allowing the GC to collect
-  /// the object if necessary.
+  /**
+   * A "normal" expiry, leaving the weak reference but allowing the GC to collect
+   * the object if necessary.
+   */
   @ReleasesNoLocks
   void expire(@Nullable ElementList<K, V> newOwner) {
     value = null;
     resplice(newOwner);
   }
 
-  /// Removes the weak reference, so if the entry has expired already then we'll
-  /// regenerate
-  /// the value.
-  ///
-  /// Primarily useful for testing.
+  /**
+   * Removes the weak reference, so if the entry has expired already then we'll
+   * regenerate the value.
+   * <p>
+   * Primarily useful for testing.
+   */
   @LockingFree
   public void weakExpire() {
     weakValue = null;
