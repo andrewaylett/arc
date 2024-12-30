@@ -143,3 +143,17 @@ val printPitestReportLocation by
     }
 
 tasks.named("pitest").configure { finalizedBy(printPitestReportLocation) }
+
+
+publishing {
+  repositories {
+    maven {
+      name = "GitHubPackages"
+      url = uri("https://maven.pkg.github.com/andrewaylett/arc")
+      credentials {
+        username = System.getenv("GITHUB_ACTOR")
+        password = System.getenv("GITHUB_TOKEN")
+      }
+    }
+  }
+}
