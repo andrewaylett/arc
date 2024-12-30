@@ -96,7 +96,7 @@ spotless {
 }
 
 checkstyle {
-  toolVersion = "10.21.0"
+  toolVersion = "10.21.1"
   maxWarnings = 0
 }
 
