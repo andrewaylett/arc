@@ -10,3 +10,6 @@ ij_java_names_count_to_use_import_on_demand = 999
 
 [*.xml]
 indent_size = 4
+ij_xml_align_attributes = false
+ij_xml_align_text = false
+ij_xml_attribute_wrap = normal
