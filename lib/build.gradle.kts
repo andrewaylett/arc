@@ -16,7 +16,7 @@ plugins {
   `maven-publish`
   id("eu.aylett.conventions") version "0.4.0"
   id("eu.aylett.plugins.version") version "0.4.0"
-  id("org.checkerframework") version "0.6.45"
+  id("org.checkerframework") version "0.6.47"
   id("com.diffplug.spotless") version "7.0.0.BETA4"
   checkstyle
   id("info.solidsoft.pitest") version "1.15.0"
