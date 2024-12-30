@@ -45,6 +45,17 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   private final ForkJoinPool pool;
 
   /// Constructs a new Arc with the specified capacity, loader function, and
+  /// the common ForkJoinPool.
+  ///
+  /// @param capacity
+  /// the maximum number of elements the cache can hold
+  /// @param loader
+  /// the function to load values
+  public Arc(int capacity, Function<K, V> loader) {
+    this(capacity, loader, ForkJoinPool.commonPool(), false);
+  }
+
+  /// Constructs a new Arc with the specified capacity, loader function, and
   /// ForkJoinPool.
   ///
   /// @param capacity
@@ -52,7 +63,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /// @param loader
   /// the function to load values
   /// @param pool
-  /// the ForkJoinPool for parallel processing
+  /// the ForkJoinPool that the loader will be submitted to
   public Arc(int capacity, Function<K, V> loader, ForkJoinPool pool) {
     this(capacity, loader, pool, false);
   }
@@ -61,7 +72,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc<>(capacity, safetyChecks);
+    inner = new InnerArc<>(Math.max(capacity / 2, 1), safetyChecks);
   }
 
   /// The map of elements stored in the cache.

@@ -76,7 +76,7 @@ class ArcTest {
   @Test
   void testMultipleElements() {
     var recordedValues = new ArrayList<@NonNull Integer>();
-    var arc = new Arc<Integer, String>(2, i -> {
+    var arc = new Arc<Integer, String>(4, i -> {
       recordedValues.add(i);
       return i.toString();
     }, ForkJoinPool.commonPool());
