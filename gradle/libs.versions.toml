@@ -3,7 +3,7 @@
 
 [versions]
 jspecify = "1.0.0"
-hamcrest = "2.2"
+hamcrest = "3.0"
 checkerframework = "3.48.3"
 spotbugs = "4.8.6"
 
