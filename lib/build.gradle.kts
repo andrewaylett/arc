@@ -29,24 +29,24 @@ repositories {
 val internal: Configuration by configurations.creating
 
 dependencies {
-  implementation(libs.jspecify)
   implementation(libs.checkerframework.qual)
+  implementation(libs.jspecify)
   implementation(libs.spotbugs.annotations)
   testImplementation(libs.hamcrest)
 
   checkerFramework(libs.checkerframework)
 
-  pitest("org.slf4j:slf4j-api:2.0.16")
-  pitest("ch.qos.logback:logback-classic:1.5.16")
-  pitest("com.groupcdg.arcmutate:base:1.2.2")
-  pitest("com.groupcdg.pitest:pitest-accelerator-junit5:1.0.6")
-  pitest("com.groupcdg:pitest-git-plugin:1.1.4")
-  pitest("com.groupcdg.pitest:pitest-kotlin-plugin:1.1.6")
+  pitest(libs.arcmutate.base)
+  pitest(libs.logback.classic)
+  pitest(libs.pitest.accelerator.junit5)
+  pitest(libs.pitest.git.plugin)
+  pitest(libs.pitest.kotlin.plugin)
+  pitest(libs.slf4j.api)
 
-  internal("org.junit.jupiter:junit-jupiter:5.11.4")
-  internal("org.pitest:pitest-junit5-plugin:1.2.1")
-  internal("org.pitest:pitest:1.17.4")
-  internal("com.puppycrawl.tools:checkstyle:10.21.1")
+  internal(libs.junit.jupiter)
+  internal(libs.pitest)
+  internal(libs.pitest.junit5.plugin)
+  internal(libs.puppycrawl.checkstyle)
 }
 
 java {
