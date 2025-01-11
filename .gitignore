@@ -99,6 +99,7 @@ msbuild.wrn
 .idea/compiler.xml
 .idea/jarRepositories.xml
 .idea/modules.xml
+.idea/GitLink.xml
 .idea/*.iml
 .idea/modules
 *.iml
