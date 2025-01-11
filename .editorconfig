@@ -14,5 +14,5 @@ ij_xml_align_attributes = false
 ij_xml_align_text = false
 ij_xml_attribute_wrap = normal
 
-[*.yaml]
+[*.{yml,yaml}]
 ij_yaml_indent_sequence_value = false

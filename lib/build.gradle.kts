@@ -95,7 +95,10 @@ spotless {
 }
 
 checkstyle {
-  toolVersion = internal.dependencies.find { it.group == "com.puppycrawl.tools" && it.name == "checkstyle" }!!.version!!
+  toolVersion =
+      internal.dependencies
+          .find { it.group == "com.puppycrawl.tools" && it.name == "checkstyle" }!!
+          .version!!
   maxWarnings = 0
 }
 
@@ -114,9 +117,13 @@ val historyLocation = projectDir.resolve("build/pitest/history")
 pitest {
   targetClasses.add("eu.aylett.*")
 
-  junit5PluginVersion = internal.dependencies.find { it.group == "org.pitest" && it.name == "pitest-junit5-plugin" }!!.version
+  junit5PluginVersion =
+      internal.dependencies
+          .find { it.group == "org.pitest" && it.name == "pitest-junit5-plugin" }!!
+          .version
   verbosity = "NO_SPINNER"
-  pitestVersion = internal.dependencies.find { it.group == "org.pitest" && it.name == "pitest" }!!.version
+  pitestVersion =
+      internal.dependencies.find { it.group == "org.pitest" && it.name == "pitest" }!!.version
   failWhenNoMutations = false
   mutators = listOf("STRONGER", "EXTENDED")
   timeoutFactor = BigDecimal.TEN
@@ -163,9 +170,9 @@ publishing {
   }
 }
 
-//signing {
+// signing {
 //  val signingKey: String? by project
 //  val signingPassword: String? by project
 //  useInMemoryPgpKeys(signingKey, signingPassword)
 //  sign(publishing.publications)
-//}
+// }
