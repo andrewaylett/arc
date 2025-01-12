@@ -7,7 +7,7 @@ plugins {
   `jvm-test-suite`
   `maven-publish`
   signing
-  id("eu.aylett.conventions") version "0.4.0"
+  id("eu.aylett.conventions") version "0.5.2"
   id("eu.aylett.plugins.version") version "0.4.0"
   id("org.checkerframework") version "0.6.48"
   id("com.diffplug.spotless") version "7.0.1"
