@@ -9,7 +9,7 @@ plugins {
   signing
   id("eu.aylett.conventions") version "0.5.2"
   id("eu.aylett.plugins.version") version "0.5.2"
-  id("org.checkerframework") version "0.6.51"
+  id("org.checkerframework") version "0.6.52"
   id("com.diffplug.spotless") version "7.0.2"
   checkstyle
   id("info.solidsoft.pitest") version "1.15.0"
