@@ -1,7 +1,7 @@
 [versions]
 arcmutate = "1.2.2"
 checkerframework = "3.49.1"
-checkstyle = "10.21.4"
+checkstyle = "10.22.0"
 hamcrest = "3.0"
 jspecify = "1.0.0"
 junit = "5.12.1"
