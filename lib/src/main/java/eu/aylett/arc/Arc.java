@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import static eu.aylett.arc.internal.Invariants.checkNotNull;
+
 /**
  * The Arc class provides a cache mechanism with a specified capacity. It uses a
  * loader function to load values and a ForkJoinPool for parallel processing.
@@ -126,8 +128,8 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     if (!refresh.isPositive()) {
       throw new IllegalArgumentException("Refresh must be positive");
     }
-    this.loader = loader;
-    this.pool = pool;
+    this.loader = checkNotNull(loader);
+    this.pool = checkNotNull(pool);
     elements = new ConcurrentHashMap<>();
     inner = new InnerArc(Math.max(capacity / 2, 1), new DelayManager(expiry, refresh, clock));
     unowned = inner.unowned;
@@ -165,6 +167,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @MayReleaseLocks
   public V get(K key) {
+    checkNotNull(key, "key cannot be null");
     while (true) {
       var ref = elements.computeIfAbsent(key, k -> {
         var element = new Element<>(k, loader, (l) -> CompletableFuture.supplyAsync(l, pool), unowned);

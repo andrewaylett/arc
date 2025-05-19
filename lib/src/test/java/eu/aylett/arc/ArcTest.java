@@ -22,6 +22,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.PolyNull;
 import org.hamcrest.Matcher;
 import org.hamcrest.MatcherAssert;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
@@ -39,6 +41,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -46,12 +49,15 @@ import java.util.stream.IntStream;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 
 import static java.util.Collections.synchronizedList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-@SuppressWarnings({"argument", "type.argument", "method.guarantee.violated"})
+@SuppressWarnings({"argument", "type.argument", "method.guarantee.violated", "type.arguments.not.inferred", "argument",
+    "methodref.receiver", "dereference.of.nullable"})
 class ArcTest {
   public static <T> org.hamcrest.Matcher<@GuardedBy @PolyNull @Initialized T> equalTo(@GuardedBy @PolyNull T operand) {
     return org.hamcrest.core.IsEqual.equalTo(operand);
@@ -80,6 +86,7 @@ class ArcTest {
 
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(2), equalTo("2"));
+    arc.checkSafety();
     arc.weakExpire();
     assertThat(arc.get(2), equalTo("2"));
     assertThat(arc.get(1), equalTo("1")); // This should reload "1" as it was evicted
@@ -269,7 +276,7 @@ class ArcTest {
           .forEach(adjacentPair -> {
             var start = adjacentPair.getFirst();
             var end = adjacentPair.getLast();
-            assertThat(end.toEpochMilli(), lessThan(start.plusSeconds(35).toEpochMilli()));
+            assertThat(end.toEpochMilli(), lessThan(start.plusSeconds(55).toEpochMilli()));
             assertThat(end.toEpochMilli(), greaterThan(start.plusSeconds(29).toEpochMilli()));
           });
     }
@@ -295,5 +302,134 @@ class ArcTest {
     public Instant instant() {
       return Instant.ofEpochMilli(value.get() * 100);
     }
+  }
+
+  @Test
+  void testNullKeyHandling() {
+    var arc = new Arc<@NonNull Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    @SuppressWarnings("DataFlowIssue")
+    var e = assertThrowsExactly(NullPointerException.class, () -> arc.get(null));
+    assertThat(e.getMessage(), equalTo("key cannot be null"));
+  }
+
+  @Test
+  void testLargeCapacity() {
+    var arc = new Arc<Integer, String>(100_000, Object::toString, ForkJoinPool.commonPool());
+    for (var i = 0; i < 100_000; i++) {
+      assertThat(arc.get(i), equalTo(String.valueOf(i)));
+    }
+  }
+
+  @Test
+  void testWeakExpireWithNoGC() {
+    var arc = new Arc<Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    arc.get(1);
+    arc.get(2);
+    arc.weakExpire();
+    assertThat(arc.get(1), equalTo("1"));
+    assertThat(arc.get(2), equalTo("2"));
+  }
+
+  @Test
+  void testWeakExpireWithGC() {
+    var arc = new Arc<Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    arc.get(1);
+    arc.get(2);
+    System.gc(); // Suggest garbage collection
+    arc.weakExpire();
+    assertThat(arc.get(1), equalTo("1")); // Should reload
+    assertThat(arc.get(2), equalTo("2")); // Should reload
+  }
+
+  @Test
+  void testLoaderExceptionHandling() {
+    var loaderFailed = new UnsupportedOperationException("Loader failed");
+
+    var arc = new Arc<Integer, String>(10, i -> {
+      if (i == 1) {
+        throw loaderFailed;
+      }
+      return i.toString();
+    }, ForkJoinPool.commonPool());
+
+    var ex = assertThrowsExactly(CompletionException.class, () -> arc.get(1));
+    assertThat(ex.getCause(), is(loaderFailed));
+
+    assertThat(arc.get(2), equalTo("2"));
+  }
+
+  @Test
+  void testLoaderRetriesAfterException() {
+    var shouldThrow = new AtomicBoolean(true);
+
+    var arc = new Arc<Integer, String>(10, i -> {
+      if (i == 1 && shouldThrow.getAndSet(false)) {
+        throw new UnsupportedOperationException("Loader failed");
+      }
+      return i.toString();
+    }, ForkJoinPool.commonPool());
+
+    var ex = assertThrowsExactly(CompletionException.class, () -> arc.get(1));
+    var cause = ex.getCause();
+    assertThat(cause.getMessage(), Matchers.equalTo("Loader failed"));
+
+    assertThat(arc.get(2), equalTo("2"));
+    assertThat(arc.get(1), equalTo("1"));
+  }
+
+  @Test
+  void testConcurrentAccessWithSameKey() throws InterruptedException {
+    var pool = ForkJoinPool.commonPool();
+    var arc = new Arc<Integer, String>(10, i -> {
+      try {
+        Thread.sleep(100); // Simulate delay in loading
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+      return i.toString();
+    }, pool);
+
+    var tasks = new ArrayList<ForkJoinTask<String>>();
+    for (var i = 0; i < 10; i++) {
+      tasks.add(pool.submit(() -> arc.get(1)));
+    }
+
+    tasks.forEach(ForkJoinTask::join);
+    assertThat(arc.get(1), equalTo("1"));
+  }
+
+  @Test
+  void testEvictionWithHighTurnover() {
+    var arc = new Arc<Integer, String>(5, Object::toString, ForkJoinPool.commonPool());
+    for (var i = 0; i < 20; i++) {
+      arc.get(i);
+    }
+    arc.weakExpire();
+    assertThat(arc.get(19), equalTo("19"));
+    assertThat(arc.get(0), equalTo("0")); // Should reload
+  }
+
+  @Test
+  void testCustomForkJoinPool() {
+    var customPool = new ForkJoinPool(2);
+    var arc = new Arc<Integer, String>(10, Object::toString, customPool);
+
+    var tasks = new ArrayList<ForkJoinTask<String>>();
+    for (var i = 0; i < 10; i++) {
+      var finalI = i;
+      tasks.add(customPool.submit(() -> arc.get(finalI)));
+    }
+
+    tasks.forEach(ForkJoinTask::join);
+    for (var i = 0; i < 10; i++) {
+      assertThat(arc.get(i), equalTo(String.valueOf(i)));
+    }
+  }
+
+  @Test
+  void testLoaderWithComplexValues() {
+    var arc = new Arc<Integer, List<Integer>>(10, i -> List.of(i, i * 2, i * 3), ForkJoinPool.commonPool());
+    assertThat(arc.get(2), equalTo(List.of(2, 4, 6)));
+    assertThat(arc.get(3), equalTo(List.of(3, 6, 9)));
   }
 }

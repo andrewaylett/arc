@@ -103,26 +103,27 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     }
 
     var currentValue = this.value;
-    if (currentValue != null) {
-      if (currentValue.isDone()) {
-        var v = currentValue.join();
-        var currentWeakValue = this.weakValue;
-        if (currentWeakValue == null || !currentWeakValue.refersTo(v)) {
-          this.weakValue = new WeakReference<>(v);
+    if (currentValue == null || currentValue.isCompletedExceptionally()) {
+      var currentWeakValue = this.weakValue;
+      if (currentWeakValue != null) {
+        var v = currentWeakValue.get();
+        if (v != null) {
+          return (this.value = CompletableFuture.completedFuture(v)).copy();
+        } else {
+          this.weakValue = null;
         }
       }
-      return currentValue.copy();
+      return load().copy();
     }
-    var currentWeakValue = this.weakValue;
-    if (currentWeakValue != null) {
-      var v = currentWeakValue.get();
-      if (v != null) {
-        return (this.value = CompletableFuture.completedFuture(v));
-      } else {
-        this.weakValue = null;
+
+    if (currentValue.isDone()) {
+      var v = currentValue.join();
+      var currentWeakValue = this.weakValue;
+      if (currentWeakValue == null || !currentWeakValue.refersTo(v)) {
+        this.weakValue = new WeakReference<>(v);
       }
     }
-    return load().copy();
+    return currentValue.copy();
   }
 
   @Holding("this.lock")
