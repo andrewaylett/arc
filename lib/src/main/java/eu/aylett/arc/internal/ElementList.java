@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,10 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+
 /**
  * The ElementList class represents a doubly linked list used to manage elements
  * in the cache. It supports operations to grow, shrink, and evict elements
@@ -47,9 +51,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   /** The target list for expired elements. */
   private final @Nullable ElementList<K, V> expiryTarget;
 
-  private final HeadElement<K, V> head;
-
-  private final TailElement<K, V> tail;
+  private final Deque<Element<K, V>> queue;
 
   /** The current number of elements in the list. */
   private int size;
@@ -61,57 +63,38 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
     this.capacity = capacity;
     this.maxCapacity = (capacity * 2) - 1;
     this.expiryTarget = expiryTarget;
-    var head = new HeadElement<K, V>();
-    var tail = new TailElement<K, V>();
-    head.setNext(tail);
-    tail.setPrev(head);
-    this.head = head;
-    this.tail = tail;
+    this.queue = new ArrayDeque<>(maxCapacity);
     this.safetyChecks = safetyChecks;
   }
 
   @ReleasesNoLocks
-  void add(Element<K, V> kvElement) {
-    if (expiryTarget == null && kvElement.containsValue()) {
-      throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + kvElement);
-    }
-    kvElement.setListLocation(new Element.ListLocation<>(this, head.next, this.head));
-    head.next.setPrev(kvElement);
-    head.setNext(kvElement);
-    size += 1;
-    evict();
-  }
-
-  @SideEffectFree
   void checkSafety(boolean sizeCheck) {
     if (!this.safetyChecks) {
       return;
     }
 
-    var seen = 0;
-    var e = this.head.next;
-    while (e instanceof Element<K, V> element) {
-      seen++;
-      var listLocation = element.getListLocation();
-      if (listLocation == null) {
-        throw new IllegalStateException("Element not owned: " + element);
-      } else if (listLocation.owner != this) {
-        throw new IllegalStateException("Element owned by wrong list: " + element);
+    var seen = new HashMap<Element<K, V>, Integer>();
+    for (var element : queue) {
+      var owner = element.getOwner();
+      if (owner != this) {
+        continue;
       }
+      seen.compute(element, (k, v) -> v == null ? 1 : v + 1);
       if (expiryTarget != null && !element.containsValue() && element.containsWeakValue()) {
         throw new IllegalStateException("Element in LRU list has only weak value: " + element);
       }
       if (expiryTarget == null && element.containsValue()) {
         throw new IllegalStateException("Element in expired list has a value: " + element);
       }
-      e = listLocation.next;
     }
-    if (e != this.tail) {
-      throw new IllegalStateException("Did not reach our list tail, but: " + e);
+    if (seen.size() != this.size) {
+      throw new IllegalStateException("Size mismatch: found " + seen.size() + " items != expected " + this.size);
     }
-    if (seen != this.size) {
-      throw new IllegalStateException("Size mismatch: found " + seen + " items != expected " + this.size);
-    }
+    seen.forEach((k, v) -> {
+      if (k.refCount() > v) {
+        throw new IllegalStateException("Element " + k + " has ref count of " + k.refCount() + " > expected " + v);
+      }
+    });
 
     if (sizeCheck && size > capacity) {
       throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
@@ -144,32 +127,15 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   void push(Element<K, V> newElement) {
-    newElement.resplice(this);
+    if (expiryTarget == null && newElement.containsValue()) {
+      throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + newElement);
+    }
+    var newlyAdded = newElement.addRef(this);
+    queue.addFirst(newElement);
+    if (newlyAdded) {
+      size += 1;
+    }
     evict();
-  }
-
-  @LockingFree
-  void remove(Element.ListLocation<K, V> oldLocation) {
-    if (oldLocation.owner != this) {
-      throw new IllegalStateException("Element owned by wrong list: " + oldLocation);
-    }
-    oldLocation.prev.setNext(oldLocation.next);
-    oldLocation.next.setPrev(oldLocation.prev);
-    this.size -= 1;
-  }
-
-  @LockingFree
-  void bringToHead(Element<K, V> element) {
-    var oldLocation = element.getListLocation();
-    if (oldLocation == null || oldLocation.owner != this) {
-      throw new IllegalStateException("Element not owned by this list: " + element);
-    }
-    oldLocation.prev.setNext(oldLocation.next);
-    oldLocation.next.setPrev(oldLocation.prev);
-    oldLocation.next = this.head.next;
-    oldLocation.prev = this.head;
-    this.head.next.setPrev(element);
-    this.head.setNext(element);
   }
 
   /** Decreases the capacity of the list and evicts elements if necessary. */
@@ -186,11 +152,13 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   void evict() {
     while (this.size > this.capacity) {
       checkSafety(false);
-      var victim = this.tail.prev;
-      if (victim instanceof Element<K, V> element) {
-        element.expire(this.expiryTarget);
-      } else {
-        throw new IllegalStateException("Attempted to expire a head or tail: " + victim);
+      var victim = queue.removeLast();
+      var expired = victim.removeRef(this);
+      if (expired) {
+        this.size -= 1;
+        if (expiryTarget != null) {
+          expiryTarget.push(victim);
+        }
       }
     }
   }
@@ -204,5 +172,9 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   @SideEffectFree
   int getCapacity() {
     return this.capacity;
+  }
+
+  public void noteRemovedElement() {
+    this.size -= 1;
   }
 }

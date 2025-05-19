@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,21 +92,15 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     if (e == null) {
       return null;
     }
-    var listLocation = e.getListLocation();
-    if (listLocation == null) {
-      // New (or at least expired out of the cache) after all
-      return null;
-    } else if (listLocation.owner == seenOnceLRU) {
-      return ListId.SEEN_ONCE_LRU;
-    } else if (listLocation.owner == seenMultiLRU) {
-      return ListId.SEEN_MULTI_LRU;
-    } else if (listLocation.owner == seenOnceExpiring) {
-      return ListId.SEEN_ONCE_EXPIRING;
-    } else if (listLocation.owner == seenMultiExpiring) {
-      return ListId.SEEN_MULTI_EXPIRING;
-    } else {
-      throw new IllegalStateException("Element " + e + " found in an unknown list " + listLocation.owner);
-    }
+    var owner = e.getOwner();
+    return switch (owner) {
+      case null -> null;
+      case ElementList<K, V> l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
+      case ElementList<K, V> l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
+      case ElementList<K, V> l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
+      case ElementList<K, V> l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
+      default -> throw new IllegalStateException("Element " + e + " found in an unknown list " + owner);
+    };
   }
 
   /**
@@ -119,22 +113,22 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
   @CFComment("CF wants us to propagate guard satisfied, but all accesses are mediated by this entrypoint")
   public CompletableFuture<V> processElement(@GuardSatisfied InnerArc<K, V> this, Element<K, V> e) {
     try {
-      switch (ownerFor(e)) {
-        case null:
+      var oldOwner = ownerFor(e);
+      switch (oldOwner) {
+        case null ->
           // New or expired out of the cache
           enqueueNewElement(e);
-          break;
-        case SEEN_ONCE_LRU, SEEN_MULTI_LRU:
+        case SEEN_ONCE_LRU, SEEN_MULTI_LRU -> {
           if (!e.containsValue()) {
             throw new IllegalStateException("Element in LRU list has no value: " + e);
           }
           seenMultiLRU.push(e);
-          break;
-        case SEEN_ONCE_EXPIRING:
+        }
+        case SEEN_ONCE_EXPIRING -> {
           targetSeenOnceCapacity = Math.min(initialCapacity * 2 - 1, targetSeenOnceCapacity + 1);
           seenMultiLRU.push(e);
-          break;
-        case SEEN_MULTI_EXPIRING:
+        }
+        case SEEN_MULTI_EXPIRING -> {
           var shrunk = seenOnceLRU.shrink();
           if (shrunk) {
             seenMultiLRU.grow(e);
@@ -142,7 +136,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
             seenMultiLRU.push(e);
           }
           targetSeenOnceCapacity = Math.max(1, targetSeenOnceCapacity - 1);
-          break;
+        }
       }
       var completableFuture = e.get();
       checkSafety();
@@ -172,7 +166,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     }
   }
 
-  @SideEffectFree
+  @ReleasesNoLocks
   @Holding("this")
   @SuppressWarnings("method.invocation")
   private void checkSafety(@GuardSatisfied InnerArc<K, V> this) {
