@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ import java.util.function.Function;
  * @param <V>
  *          the type of mapped values
  */
-public class Element<K extends @NonNull Object, V extends @NonNull Object> implements ElementBase<K, V> {
+public final class Element<K extends @NonNull Object, V extends @NonNull Object> {
   /** The key associated with this element. */
   private final K key;
 
@@ -55,7 +55,8 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   /** A CompletableFuture representing the value associated with this element. */
   private @Nullable CompletableFuture<V> value;
 
-  private @Nullable ListLocation<K, V> listLocation;
+  private @Nullable ElementList<K, V> owner;
+  private int ownerRefCount = 0;
 
   @LockingFree
   @SuppressFBWarnings("EI_EXPOSE_REP")
@@ -71,8 +72,11 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
    */
   @ReleasesNoLocks
   CompletableFuture<V> get() {
-    var listLocation = this.listLocation;
-    if (listLocation == null || !listLocation.owner.containsValues()) {
+    var currentOwner = this.owner;
+    if (currentOwner == null) {
+      throw new IllegalStateException("Called get on an element with no owner");
+    }
+    if (!currentOwner.containsValues()) {
       throw new IllegalStateException("Called get on an object in an expired list");
     }
     return setup();
@@ -90,57 +94,17 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   }
 
   @SideEffectFree
-  @Nullable ListLocation<K, V> getListLocation() {
-    return listLocation;
-  }
-
-  @LockingFree
-  void setListLocation(ListLocation<K, V> listLocation) {
-    this.listLocation = listLocation;
-  }
-
-  @Override
-  @LockingFree
-  public void setPrev(ElementBase<K, V> prev) {
-    var listLocation = this.listLocation;
-    if (listLocation != null) {
-      listLocation.prev = prev;
-    } else {
-      throw new IllegalStateException("Not owned");
-    }
-  }
-
-  @Override
-  @LockingFree
-  public void setNext(ElementBase<K, V> next) {
-    var listLocation = this.listLocation;
-    if (listLocation != null) {
-      listLocation.next = next;
-    } else {
-      throw new IllegalStateException("Not owned");
-    }
-  }
-
-  /** Repositions this element in a linked list. */
-  @ReleasesNoLocks
-  void resplice(@Nullable ElementList<K, V> newOwner) {
-    var oldLocation = this.listLocation;
-    if (oldLocation != null && oldLocation.owner == newOwner) {
-      newOwner.bringToHead(this);
-      return;
-    }
-    if (oldLocation != null) {
-      oldLocation.owner.remove(oldLocation);
-      this.listLocation = null;
-    }
-    if (newOwner != null) {
-      newOwner.add(this);
-    }
+  @Nullable ElementList<K, V> getOwner() {
+    return owner;
   }
 
   @ReleasesNoLocks
   @SuppressFBWarnings("EI_EXPOSE_REP")
   CompletableFuture<V> setup() {
+    var currentOwner = this.owner;
+    if (currentOwner != null && !currentOwner.containsValues()) {
+      throw new IllegalStateException("Called setup on an expired element");
+    }
     var value = this.value;
     if (value != null) {
       if (value.isDone()) {
@@ -164,24 +128,36 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
     if (value == null) {
       this.value = value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
     }
-    var listLocation = this.listLocation;
-    if (listLocation != null && !listLocation.owner.containsValues()) {
-      throw new IllegalStateException("Called setup on an expired element");
-    }
     return value;
   }
 
-  static final class ListLocation<K extends @NonNull Object, V extends @NonNull Object> {
-    final ElementList<K, V> owner;
-    ElementBase<K, V> next;
-    ElementBase<K, V> prev;
-
-    @LockingFree
-    ListLocation(ElementList<K, V> owner, ElementBase<K, V> next, ElementBase<K, V> prev) {
-      this.owner = owner;
-      this.next = next;
-      this.prev = prev;
+  boolean addRef(ElementList<K, V> fromOwner) {
+    var oldOwner = this.owner;
+    if (oldOwner != fromOwner) {
+      if (oldOwner != null) {
+        // Let our previous owner know that we're being added to a different list
+        oldOwner.noteRemovedElement();
+      }
+      owner = fromOwner;
+      ownerRefCount = 1;
+      return true;
+    } else {
+      ownerRefCount++;
+      return false;
     }
+  }
+
+  boolean removeRef(ElementList<K, V> fromOwner) {
+    if (owner != fromOwner) {
+      // We've been added to a different list already
+      return false;
+    }
+    ownerRefCount--;
+    if (ownerRefCount == 0) {
+      expire();
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -189,9 +165,9 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
    * the object if necessary.
    */
   @ReleasesNoLocks
-  void expire(@Nullable ElementList<K, V> newOwner) {
+  void expire() {
     value = null;
-    resplice(newOwner);
+    owner = null;
   }
 
   /**
@@ -203,5 +179,9 @@ public class Element<K extends @NonNull Object, V extends @NonNull Object> imple
   @LockingFree
   public void weakExpire() {
     weakValue = null;
+  }
+
+  int refCount() {
+    return ownerRefCount;
   }
 }

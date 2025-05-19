@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -183,7 +183,7 @@ class ArcTest {
     }, pool);
 
     var t1 = pool.submit(() -> arc.get(1));
-    inOneSem.release();
+    inOneSem.acquire();
     var t2 = pool.submit(() -> arc.get(2));
     assertThat(t1.get(1, SECONDS), equalTo("1"));
     assertThat(t2.get(1, SECONDS), equalTo("2"));
