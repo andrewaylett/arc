@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module eu.aylett.arc {
+open module eu.aylett.arc {
   requires org.jspecify;
   requires org.checkerframework.checker.qual;
   requires com.github.spotbugs.annotations;
