@@ -30,9 +30,11 @@ val internal: Configuration by configurations.creating
 
 dependencies {
   implementation(libs.checkerframework.qual)
+  implementation(libs.jetbrains.annotations)
   implementation(libs.jspecify)
   implementation(libs.spotbugs.annotations)
   testImplementation(libs.hamcrest)
+  testImplementation(libs.mockito)
 
   checkerFramework(libs.checkerframework)
 
