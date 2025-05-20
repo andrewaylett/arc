@@ -23,7 +23,6 @@ import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.SideEffectFree;
-import org.checkerframework.framework.qual.CFComment;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -41,24 +40,24 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
   /**
    * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy("this") ElementList<K, V> seenOnceLRU;
+  private final @GuardedBy ElementList seenOnceLRU;
 
   /**
    * Elements seen multiple times, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy("this") ElementList<K, V> seenMultiLRU;
+  private final @GuardedBy ElementList seenMultiLRU;
 
   /**
    * Elements seen once, that have expired out of the main cache but may inform
    * future adaptivity.
    */
-  private final @GuardedBy("this") ElementList<K, V> seenOnceExpiring;
+  private final @GuardedBy ElementList seenOnceExpiring;
 
   /**
    * Elements seen multiple times, that have expired out of the main cache but may
    * inform future adaptivity.
    */
-  private final @GuardedBy("this") ElementList<K, V> seenMultiExpiring;
+  private final @GuardedBy ElementList seenMultiExpiring;
   private final int initialCapacity;
 
   /**
@@ -78,27 +77,27 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   public InnerArc(int capacity, boolean safetyChecks) {
     initialCapacity = capacity;
-    seenOnceExpiring = new ElementList<>("seenOnceExpiring", capacity, null, safetyChecks);
-    seenMultiExpiring = new ElementList<>("seenMultiExpiring", capacity, null, safetyChecks);
-    seenOnceLRU = new ElementList<>("seenOnceLRU", capacity, seenOnceExpiring, safetyChecks);
-    seenMultiLRU = new ElementList<>("seenMultiLRU", capacity, seenMultiExpiring, safetyChecks);
+    seenOnceExpiring = new ElementList("seenOnceExpiring", capacity, null, safetyChecks);
+    seenMultiExpiring = new ElementList("seenMultiExpiring", capacity, null, safetyChecks);
+    seenOnceLRU = new ElementList("seenOnceLRU", capacity, seenOnceExpiring, safetyChecks);
+    seenMultiLRU = new ElementList("seenMultiLRU", capacity, seenMultiExpiring, safetyChecks);
     targetSeenOnceCapacity = capacity;
     this.safetyChecks = safetyChecks;
   }
 
   @SideEffectFree
   @Holding("this")
-  private @Nullable ListId ownerFor(@Nullable Element<K, V> e) {
+  private @Nullable ListId ownerFor(@GuardSatisfied InnerArc<K, V> this, @Nullable Element<?, ?> e) {
     if (e == null) {
       return null;
     }
     var owner = e.getOwner();
     return switch (owner) {
       case null -> null;
-      case ElementList<K, V> l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
-      case ElementList<K, V> l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
-      case ElementList<K, V> l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
-      case ElementList<K, V> l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
+      case ElementList l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
+      case ElementList l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
+      case ElementList l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
+      case ElementList l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
       default -> throw new IllegalStateException("Element " + e + " found in an unknown list " + owner);
     };
   }
@@ -109,8 +108,6 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  @SuppressWarnings("method.invocation")
-  @CFComment("CF wants us to propagate guard satisfied, but all accesses are mediated by this entrypoint")
   public CompletableFuture<V> processElement(@GuardSatisfied InnerArc<K, V> this, Element<K, V> e) {
     try {
       var oldOwner = ownerFor(e);
@@ -155,8 +152,8 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  @SuppressWarnings("method.invocation")
-  private void enqueueNewElement(Element<K, V> newElement) throws InterruptedException {
+  private void enqueueNewElement(@GuardSatisfied InnerArc<K, V> this, Element<K, V> newElement)
+      throws InterruptedException {
     newElement.setup();
     if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity) {
       seenOnceLRU.push(newElement);
@@ -168,7 +165,6 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
 
   @ReleasesNoLocks
   @Holding("this")
-  @SuppressWarnings("method.invocation")
   private void checkSafety(@GuardSatisfied InnerArc<K, V> this) {
     if (!safetyChecks) {
       return;

@@ -16,7 +16,8 @@
 
 package eu.aylett.arc.internal;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.checkerframework.checker.lock.qual.GuardSatisfied;
+import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
@@ -25,8 +26,8 @@ import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * The Element class represents an element in the cache. It manages the value
@@ -42,9 +43,9 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   private final K key;
 
   /** The function used to load values. */
-  private final Function<K, V> loader;
+  private final Function<? super K, V> loader;
 
-  private final ForkJoinPool pool;
+  private final Function<Supplier<V>, CompletableFuture<V>> pool;
 
   /**
    * A weak reference to the value associated with this element, if it's been
@@ -55,12 +56,11 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   /** A CompletableFuture representing the value associated with this element. */
   private @Nullable CompletableFuture<V> value;
 
-  private @Nullable ElementList<K, V> owner;
+  private @Nullable @GuardedBy ElementList owner;
   private int ownerRefCount = 0;
 
   @LockingFree
-  @SuppressFBWarnings("EI_EXPOSE_REP")
-  public Element(K key, Function<K, V> loader, ForkJoinPool pool) {
+  public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool) {
     this.key = key;
     this.loader = loader;
     this.pool = pool;
@@ -76,7 +76,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     if (currentOwner == null) {
       throw new IllegalStateException("Called get on an element with no owner");
     }
-    if (!currentOwner.containsValues()) {
+    if (currentOwner.isForExpiredElements()) {
       throw new IllegalStateException("Called get on an object in an expired list");
     }
     return setup();
@@ -94,15 +94,14 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   }
 
   @SideEffectFree
-  @Nullable ElementList<K, V> getOwner() {
+  @GuardedBy @Nullable ElementList getOwner() {
     return owner;
   }
 
   @ReleasesNoLocks
-  @SuppressFBWarnings("EI_EXPOSE_REP")
   CompletableFuture<V> setup() {
     var currentOwner = this.owner;
-    if (currentOwner != null && !currentOwner.containsValues()) {
+    if (currentOwner != null && currentOwner.isForExpiredElements()) {
       throw new IllegalStateException("Called setup on an expired element");
     }
     var value = this.value;
@@ -126,12 +125,12 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
       }
     }
     if (value == null) {
-      this.value = value = CompletableFuture.supplyAsync(() -> loader.apply(key), pool);
+      this.value = value = pool.apply(() -> loader.apply(key));
     }
     return value;
   }
 
-  boolean addRef(ElementList<K, V> fromOwner) {
+  boolean addRef(@GuardSatisfied Element<K, V> this, @GuardedBy ElementList fromOwner) {
     var oldOwner = this.owner;
     if (oldOwner != fromOwner) {
       if (oldOwner != null) {
@@ -147,7 +146,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     }
   }
 
-  boolean removeRef(ElementList<K, V> fromOwner) {
+  boolean removeRef(ElementList fromOwner) {
     if (owner != fromOwner) {
       // We've been added to a different list already
       return false;

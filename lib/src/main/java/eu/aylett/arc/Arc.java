@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /**
    * The function used to load values.
    */
-  private final Function<K, V> loader;
+  private final Function<? super K, V> loader;
 
   /**
    * The ForkJoinPool used for parallel processing.
@@ -74,11 +74,11 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    * @param pool
    *          the ForkJoinPool that the loader will be submitted to
    */
-  public Arc(int capacity, Function<K, V> loader, ForkJoinPool pool) {
+  public Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool) {
     this(capacity, loader, pool, false);
   }
 
-  Arc(int capacity, Function<K, V> loader, ForkJoinPool pool, boolean safetyChecks) {
+  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, boolean safetyChecks) {
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
@@ -124,7 +124,8 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   public V get(K key) {
     while (true) {
-      var ref = elements.computeIfAbsent(key, k -> new SoftReference<>(new Element<>(key, loader, pool)));
+      var ref = elements.computeIfAbsent(key,
+          k -> new SoftReference<>(new Element<>(key, loader, (l) -> CompletableFuture.supplyAsync(l, pool))));
       var e = ref.get();
       if (e == null) {
         // Remove if expired and not already removed/replaced

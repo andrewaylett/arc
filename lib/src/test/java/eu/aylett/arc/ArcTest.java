@@ -17,6 +17,7 @@
 package eu.aylett.arc;
 
 import org.checkerframework.checker.initialization.qual.Initialized;
+import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.PolyNull;
 import org.hamcrest.Matcher;
@@ -38,19 +39,18 @@ import static org.hamcrest.Matchers.hasItems;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-@SuppressWarnings({"type.arguments.not.inferred", "argument"})
 class ArcTest {
-  public static <T> org.hamcrest.Matcher<@PolyNull @Initialized T> equalTo(@PolyNull T operand) {
+  public static <T> org.hamcrest.Matcher<@GuardedBy @PolyNull @Initialized T> equalTo(@GuardedBy @PolyNull T operand) {
     return org.hamcrest.core.IsEqual.equalTo(operand);
   }
 
-  public static <T> void assertThat(@PolyNull T actual, Matcher<? super @PolyNull T> matcher) {
+  public static <T> void assertThat(@GuardedBy @PolyNull T actual, Matcher<? super @GuardedBy @PolyNull T> matcher) {
     MatcherAssert.assertThat("", actual, matcher);
   }
 
   @Test
   void test() {
-    var arc = new Arc<Integer, String>(1, i -> i.toString(), ForkJoinPool.commonPool());
+    var arc = new Arc<>(1, i -> "" + i, ForkJoinPool.commonPool());
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(1), equalTo("1"));
   }
@@ -70,7 +70,7 @@ class ArcTest {
     assertThat(arc.get(1), equalTo("1")); // This should reload "1" as it was evicted
 
     // Check that the loader function was called with the expected values
-    assertThat(recordedValues, equalTo(List.of(1, 2, 1)));
+    assertThat(recordedValues, equalTo(List.<@GuardedBy Integer>of(1, 2, 1)));
   }
 
   @Test
@@ -87,7 +87,7 @@ class ArcTest {
     assertThat(arc.get(2), equalTo("2"));
 
     // Check that the loader function was called with the expected values
-    assertThat(recordedValues, equalTo(List.of(1, 2)));
+    assertThat(recordedValues, equalTo(List.<@GuardedBy Integer>of(1, 2)));
   }
 
   @Test
