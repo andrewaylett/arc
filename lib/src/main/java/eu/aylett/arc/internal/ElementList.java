@@ -16,11 +16,10 @@
 
 package eu.aylett.arc.internal;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
+import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
@@ -32,13 +31,8 @@ import java.util.HashMap;
  * The ElementList class represents a doubly linked list used to manage elements
  * in the cache. It supports operations to grow, shrink, and evict elements
  * based on the list's capacity.
- *
- * @param <K>
- *          the type of keys maintained by this cache
- * @param <V>
- *          the type of mapped values
  */
-class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
+class ElementList {
 
   /** The maximum capacity to set. */
   private final int maxCapacity;
@@ -49,16 +43,15 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   private int capacity;
 
   /** The target list for expired elements. */
-  private final @Nullable ElementList<K, V> expiryTarget;
+  private final @Nullable ElementList expiryTarget;
 
-  private final Deque<Element<K, V>> queue;
+  private final Deque<Element<?, ?>> queue;
 
   /** The current number of elements in the list. */
   private int size;
 
   @LockingFree
-  @SuppressFBWarnings("EI_EXPOSE_REP")
-  ElementList(String name, int capacity, @Nullable ElementList<K, V> expiryTarget, boolean safetyChecks) {
+  ElementList(String name, int capacity, @Nullable ElementList expiryTarget, boolean safetyChecks) {
     this.name = name;
     this.capacity = capacity;
     this.maxCapacity = (capacity * 2) - 1;
@@ -68,12 +61,12 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @ReleasesNoLocks
-  void checkSafety(boolean sizeCheck) {
+  void checkSafety(@GuardedBy ElementList this, boolean sizeCheck) {
     if (!this.safetyChecks) {
       return;
     }
 
-    var seen = new HashMap<Element<K, V>, Integer>();
+    var seen = new HashMap<Element<?, ?>, Integer>();
     for (var element : queue) {
       var owner = element.getOwner();
       if (owner != this) {
@@ -102,8 +95,8 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
   }
 
   @SideEffectFree
-  boolean containsValues() {
-    return expiryTarget != null;
+  boolean isForExpiredElements(@GuardSatisfied ElementList this) {
+    return expiryTarget == null;
   }
 
   /**
@@ -113,7 +106,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
    *          the new element to add
    */
   @ReleasesNoLocks
-  void grow(Element<K, V> newElement) {
+  void grow(@GuardedBy ElementList this, Element<?, ?> newElement) {
     this.capacity = Math.min(this.capacity + 1, this.maxCapacity);
     push(newElement);
   }
@@ -126,7 +119,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
    *          the new element to add
    */
   @ReleasesNoLocks
-  void push(Element<K, V> newElement) {
+  void push(@GuardedBy ElementList this, Element<?, ?> newElement) {
     if (expiryTarget == null && newElement.containsValue()) {
       throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + newElement);
     }
@@ -140,7 +133,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
   /** Decreases the capacity of the list and evicts elements if necessary. */
   @ReleasesNoLocks
-  boolean shrink() {
+  boolean shrink(@GuardedBy ElementList this) {
     var shrunk = this.capacity > 1;
     this.capacity = Math.max(this.capacity - 1, 1);
     evict();
@@ -149,7 +142,7 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
   /** Evicts the least recently used element if the list exceeds its capacity. */
   @ReleasesNoLocks
-  void evict() {
+  void evict(@GuardedBy ElementList this) {
     while (this.size > this.capacity) {
       checkSafety(false);
       var victim = queue.removeLast();
@@ -165,12 +158,12 @@ class ElementList<K extends @NonNull Object, V extends @NonNull Object> {
 
   @SideEffectFree
   @Override
-  public String toString(@GuardSatisfied ElementList<K, V> this) {
+  public String toString(@GuardSatisfied ElementList this) {
     return "ElementList-" + this.name + " (" + this.size + "/" + this.capacity + ")";
   }
 
   @SideEffectFree
-  int getCapacity() {
+  int getCapacity(@GuardSatisfied ElementList this) {
     return this.capacity;
   }
 
