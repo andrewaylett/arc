@@ -16,6 +16,7 @@
 
 package eu.aylett.arc.internal;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.Holding;
@@ -24,7 +25,10 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 
+import java.lang.ref.SoftReference;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
+import java.util.function.Function;
 
 /**
  * The InnerArc class manages the internal cache mechanism for the Arc class. It
@@ -59,6 +63,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   private final @GuardedBy ElementList seenMultiExpiring;
   private final int initialCapacity;
+  private final DelayManager delayManager;
 
   /**
    * The target size for the seen-once LRU list.
@@ -75,12 +80,14 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    *          whether to check the cache's internal consistency after every
    *          operation
    */
-  public InnerArc(int capacity, boolean safetyChecks) {
+  @SuppressFBWarnings("EI2")
+  public InnerArc(int capacity, boolean safetyChecks, DelayManager delayManager) {
     initialCapacity = capacity;
-    seenOnceExpiring = new ElementList("seenOnceExpiring", capacity, null, safetyChecks);
-    seenMultiExpiring = new ElementList("seenMultiExpiring", capacity, null, safetyChecks);
-    seenOnceLRU = new ElementList("seenOnceLRU", capacity, seenOnceExpiring, safetyChecks);
-    seenMultiLRU = new ElementList("seenMultiLRU", capacity, seenMultiExpiring, safetyChecks);
+    this.delayManager = delayManager;
+    seenOnceExpiring = new ElementList(ElementList.Name.SEEN_ONCE_EXPIRING, capacity, null, safetyChecks);
+    seenMultiExpiring = new ElementList(ElementList.Name.SEEN_MULTI_EXPIRING, capacity, null, safetyChecks);
+    seenOnceLRU = new ElementList(ElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring, safetyChecks);
+    seenMultiLRU = new ElementList(ElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring, safetyChecks);
     targetSeenOnceCapacity = capacity;
     this.safetyChecks = safetyChecks;
   }
@@ -108,7 +115,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  public CompletableFuture<V> processElement(@GuardSatisfied InnerArc<K, V> this, Element<K, V> e) {
+  public CompletableFuture<V> processElement(@GuardedBy InnerArc<K, V> this, Element<?, V> e) {
     try {
       var oldOwner = ownerFor(e);
       switch (oldOwner) {
@@ -135,11 +142,10 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
           targetSeenOnceCapacity = Math.max(1, targetSeenOnceCapacity - 1);
         }
       }
-      var completableFuture = e.get();
+      return e.get();
+    } finally {
       checkSafety();
-      return completableFuture;
-    } catch (InterruptedException ex) {
-      throw new IllegalStateException(ex);
+      delayManager.poll();
     }
   }
 
@@ -152,9 +158,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  private void enqueueNewElement(@GuardSatisfied InnerArc<K, V> this, Element<K, V> newElement)
-      throws InterruptedException {
-    newElement.setup();
+  private void enqueueNewElement(@GuardSatisfied InnerArc<K, V> this, Element<?, ?> newElement) {
     if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity) {
       seenOnceLRU.push(newElement);
     } else {
@@ -179,5 +183,10 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     seenMultiLRU.checkSafety(true);
     seenOnceExpiring.checkSafety(true);
     seenMultiExpiring.checkSafety(true);
+  }
+
+  public SoftReference<@Nullable Element<K, V>> createElement(@GuardedBy InnerArc<K, V> this, K key,
+      Function<? super K, V> loader, ForkJoinPool pool) {
+    return new SoftReference<>(new Element<>(key, loader, (l) -> CompletableFuture.supplyAsync(l, pool), delayManager));
   }
 }

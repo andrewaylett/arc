@@ -16,13 +16,16 @@
 
 package eu.aylett.arc;
 
+import eu.aylett.arc.internal.DelayManager;
 import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
-import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.lang.ref.SoftReference;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.InstantSource;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
@@ -38,7 +41,7 @@ import java.util.function.Function;
  * @param <V>
  *          the type of mapped values
  */
-public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
+public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
 
   /**
    * The function used to load values.
@@ -58,9 +61,14 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    *          the maximum number of elements the cache can hold
    * @param loader
    *          the function to load values
+   * @param expiry
+   *          how long after finishing loading a value it should be discarded
+   * @param refresh
+   *          if a value is used more than once in the refresh interval after
+   *          loading, we will refresh it
    */
-  public Arc(int capacity, Function<K, V> loader) {
-    this(capacity, loader, ForkJoinPool.commonPool(), false);
+  public Arc(int capacity, Function<K, V> loader, Duration expiry, Duration refresh) {
+    this(capacity, loader, ForkJoinPool.commonPool(), false, expiry, refresh, Clock.systemUTC());
   }
 
   /**
@@ -75,14 +83,42 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    *          the ForkJoinPool that the loader will be submitted to
    */
   public Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool) {
-    this(capacity, loader, pool, false);
+    this(capacity, loader, Duration.ofSeconds(60), Duration.ofSeconds(30), pool);
   }
 
-  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, boolean safetyChecks) {
+  /**
+   * Constructs a new Arc with the specified capacity, loader function, and
+   * ForkJoinPool.
+   *
+   * @param capacity
+   *          the maximum number of elements the cache can hold
+   * @param loader
+   *          the function to load values
+   * @param pool
+   *          the ForkJoinPool that the loader will be submitted to
+   */
+  public Arc(int capacity, Function<? super K, V> loader, Duration expiry, Duration refresh, ForkJoinPool pool) {
+    this(capacity, loader, pool, false, expiry, refresh, Clock.systemUTC());
+  }
+
+  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, boolean safetyChecks, Duration expiry,
+      Duration refresh, InstantSource clock) {
+    if (capacity < 1) {
+      throw new IllegalArgumentException("Capacity must be at least 1");
+    }
+    if (expiry.compareTo(refresh) < 0) {
+      throw new IllegalArgumentException("Expiry must be greater than refresh");
+    }
+    if (!expiry.isPositive()) {
+      throw new IllegalArgumentException("Expiry must be positive");
+    }
+    if (!refresh.isPositive()) {
+      throw new IllegalArgumentException("Refresh must be positive");
+    }
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc<>(Math.max(capacity / 2, 1), safetyChecks);
+    inner = new InnerArc(Math.max(capacity / 2, 1), safetyChecks, new DelayManager(expiry, refresh, clock));
   }
 
   /**
@@ -93,7 +129,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /**
    * The inner cache mechanism.
    */
-  private final @GuardedBy("<self>") InnerArc<K, V> inner;
+  private final InnerArc<K, V> inner;
 
   /**
    * Removes all the weak references, so objects that have expired out of the
@@ -107,9 +143,6 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
       var element = elementSoftReference.get();
       if (element != null) {
         element.weakExpire();
-        if (!element.containsValue()) {
-          elementSoftReference.clear();
-        }
       }
     });
   }
@@ -124,8 +157,7 @@ public class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   public V get(K key) {
     while (true) {
-      var ref = elements.computeIfAbsent(key,
-          k -> new SoftReference<>(new Element<>(key, loader, (l) -> CompletableFuture.supplyAsync(l, pool))));
+      var ref = elements.computeIfAbsent(key, k -> inner.createElement(k, loader, pool));
       var e = ref.get();
       if (e == null) {
         // Remove if expired and not already removed/replaced
