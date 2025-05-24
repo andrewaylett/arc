@@ -28,9 +28,9 @@ import java.util.Deque;
 import java.util.HashMap;
 
 /**
- * The ElementList class represents a doubly linked list used to manage elements
- * in the cache. It supports operations to grow, shrink, and evict elements
- * based on the list's capacity.
+ * The ElementList class represents a queue used to manage elements in the
+ * cache. It supports operations to grow, shrink, and evict elements based on
+ * the list's capacity.
  */
 class ElementList {
 
