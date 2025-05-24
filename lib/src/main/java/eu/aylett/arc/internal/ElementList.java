@@ -37,7 +37,7 @@ class ElementList {
   /** The maximum capacity to set. */
   private final int maxCapacity;
 
-  private final String name;
+  public final Name name;
   private final boolean safetyChecks;
   /** The maximum number of elements the list may hold. */
   private int capacity;
@@ -51,7 +51,7 @@ class ElementList {
   private int size;
 
   @LockingFree
-  ElementList(String name, int capacity, @Nullable ElementList expiryTarget, boolean safetyChecks) {
+  ElementList(Name name, int capacity, @Nullable ElementList expiryTarget, boolean safetyChecks) {
     this.name = name;
     this.capacity = capacity;
     this.maxCapacity = (capacity * 2) - 1;
@@ -124,6 +124,9 @@ class ElementList {
       throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + newElement);
     }
     var newlyAdded = newElement.addRef(this);
+    if (expiryTarget != null && !newElement.containsValue()) {
+      newElement.get();
+    }
     queue.addFirst(newElement);
     if (newlyAdded) {
       size += 1;
@@ -169,5 +172,9 @@ class ElementList {
 
   public void noteRemovedElement() {
     this.size -= 1;
+  }
+
+  public enum Name {
+    SEEN_ONCE_LRU, SEEN_MULTI_LRU, SEEN_ONCE_EXPIRING, SEEN_MULTI_EXPIRING
   }
 }

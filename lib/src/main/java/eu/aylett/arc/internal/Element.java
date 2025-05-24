@@ -16,6 +16,7 @@
 
 package eu.aylett.arc.internal;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.LockingFree;
@@ -47,6 +48,8 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
   private final Function<Supplier<V>, CompletableFuture<V>> pool;
 
+  private final DelayManager delayManager;
+
   /**
    * A weak reference to the value associated with this element, if it's been
    * computed.
@@ -57,13 +60,17 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   private @Nullable CompletableFuture<V> value;
 
   private @Nullable @GuardedBy ElementList owner;
+  private @Nullable DelayedElement currentDelayedElement = null;
   private int ownerRefCount = 0;
 
   @LockingFree
-  public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool) {
+  @SuppressFBWarnings("EI2")
+  public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool,
+      DelayManager delayManager) {
     this.key = key;
     this.loader = loader;
     this.pool = pool;
+    this.delayManager = delayManager;
   }
 
   /**
@@ -79,7 +86,34 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     if (currentOwner.isForExpiredElements()) {
       throw new IllegalStateException("Called get on an object in an expired list");
     }
-    return setup();
+
+    var currentValue = this.value;
+    if (currentValue != null) {
+      if (currentValue.isDone()) {
+        var v = currentValue.join();
+        var currentWeakValue = this.weakValue;
+        if (currentWeakValue == null || !currentWeakValue.refersTo(v)) {
+          this.weakValue = new WeakReference<>(v);
+        }
+        return currentValue;
+      }
+    }
+    var currentWeakValue = this.weakValue;
+    if (currentWeakValue != null) {
+      var v = currentWeakValue.get();
+      if (v != null) {
+        if (currentValue == null) {
+          this.value = currentValue = CompletableFuture.completedFuture(v);
+          return currentValue;
+        }
+      } else {
+        this.weakValue = null;
+      }
+    }
+    if (currentValue == null) {
+      currentValue = load();
+    }
+    return currentValue;
   }
 
   @SideEffectFree
@@ -98,36 +132,18 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     return owner;
   }
 
-  @ReleasesNoLocks
-  CompletableFuture<V> setup() {
-    var currentOwner = this.owner;
-    if (currentOwner != null && currentOwner.isForExpiredElements()) {
-      throw new IllegalStateException("Called setup on an expired element");
-    }
-    var value = this.value;
-    if (value != null) {
-      if (value.isDone()) {
-        var v = value.join();
-        var weakValue = this.weakValue;
-        if (weakValue == null || !weakValue.refersTo(v)) {
-          this.weakValue = new WeakReference<>(v);
-        }
-      }
-      return value;
-    }
-    var weakValue = this.weakValue;
-    if (weakValue != null) {
-      var v = weakValue.get();
-      if (v != null) {
-        this.value = value = CompletableFuture.completedFuture(v);
-      } else {
-        this.weakValue = null;
-      }
-    }
-    if (value == null) {
-      this.value = value = pool.apply(() -> loader.apply(key));
-    }
+  CompletableFuture<V> load() {
+    var value = pool.apply(() -> {
+      var val = loader.apply(key);
+      resetDelay();
+      return val;
+    });
+    this.value = value;
     return value;
+  }
+
+  private void resetDelay() {
+    this.currentDelayedElement = delayManager.add(this);
   }
 
   boolean addRef(@GuardSatisfied Element<K, V> this, @GuardedBy ElementList fromOwner) {
@@ -170,17 +186,47 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   }
 
   /**
-   * Removes the weak reference, so if the entry has expired already then we'll
-   * regenerate the value.
+   * Removes the weak reference if no strong reference remains here, pretending
+   * that the GC has cleared the value.
    * <p>
    * Primarily useful for testing.
    */
   @LockingFree
   public void weakExpire() {
-    weakValue = null;
+    if (this.value == null) {
+      // No strong reference, so a GC may clear the value -- and we pretend it has.
+      weakValue = null;
+    }
   }
 
   int refCount() {
     return ownerRefCount;
+  }
+
+  public void delayExpired(DelayedElement delayedElement) {
+    if (delayedElement == currentDelayedElement) {
+      value = null;
+      weakValue = null;
+      var currentOwner = this.owner;
+      if (currentOwner != null) {
+        currentOwner.noteRemovedElement();
+        this.owner = null;
+      }
+    }
+  }
+
+  public void reload() {
+    var currentOwner = this.owner;
+    if (currentOwner != null && currentOwner.name == ElementList.Name.SEEN_MULTI_LRU) {
+      load();
+    }
+  }
+
+  @Override
+  public String toString(@GuardSatisfied Element<K, V> this) {
+    var currentWeakValue = weakValue;
+    var weakValueString = currentWeakValue == null ? "null" : currentWeakValue.get();
+    return "Element{" + "key=" + key + ", value=" + value + ", weakValue=" + weakValueString + ", owner=" + owner
+        + ", ownerRefCount=" + ownerRefCount + '}';
   }
 }
