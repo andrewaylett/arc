@@ -21,9 +21,9 @@ import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.SideEffectFree;
+import org.jspecify.annotations.NonNull;
 
 import java.lang.ref.SoftReference;
 import java.util.concurrent.CompletableFuture;
@@ -33,13 +33,8 @@ import java.util.function.Function;
 /**
  * The InnerArc class manages the internal cache mechanism for the Arc class. It
  * maintains multiple lists to track elements based on their usage patterns.
- *
- * @param <K>
- *          the type of keys maintained by this cache
- * @param <V>
- *          the type of mapped values
  */
-public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
+public class InnerArc {
 
   /**
    * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
@@ -94,7 +89,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
 
   @SideEffectFree
   @Holding("this")
-  private @Nullable ListId ownerFor(@GuardSatisfied InnerArc<K, V> this, @Nullable Element<?, ?> e) {
+  private @Nullable ListId ownerFor(@GuardSatisfied InnerArc this, @Nullable Element<?, ?> e) {
     if (e == null) {
       return null;
     }
@@ -115,7 +110,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  public CompletableFuture<V> processElement(@GuardedBy InnerArc<K, V> this, Element<?, V> e) {
+  public <V extends @NonNull Object> CompletableFuture<V> processElement(@GuardedBy InnerArc this, Element<?, V> e) {
     try {
       var oldOwner = ownerFor(e);
       switch (oldOwner) {
@@ -158,7 +153,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
    */
   @ReleasesNoLocks
   @Holding("this")
-  private void enqueueNewElement(@GuardSatisfied InnerArc<K, V> this, Element<?, ?> newElement) {
+  private void enqueueNewElement(@GuardSatisfied InnerArc this, Element<?, ?> newElement) {
     if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity) {
       seenOnceLRU.push(newElement);
     } else {
@@ -169,7 +164,7 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
 
   @ReleasesNoLocks
   @Holding("this")
-  private void checkSafety(@GuardSatisfied InnerArc<K, V> this) {
+  private void checkSafety(@GuardSatisfied InnerArc this) {
     if (!safetyChecks) {
       return;
     }
@@ -185,8 +180,8 @@ public class InnerArc<K extends @NonNull Object, V extends @NonNull Object> {
     seenMultiExpiring.checkSafety(true);
   }
 
-  public SoftReference<@Nullable Element<K, V>> createElement(@GuardedBy InnerArc<K, V> this, K key,
-      Function<? super K, V> loader, ForkJoinPool pool) {
+  public <K extends @NonNull Object, V extends @NonNull Object> SoftReference<@Nullable Element<K, V>> createElement(
+      @GuardedBy InnerArc this, K key, Function<? super K, V> loader, ForkJoinPool pool) {
     return new SoftReference<>(new Element<>(key, loader, (l) -> CompletableFuture.supplyAsync(l, pool), delayManager));
   }
 }

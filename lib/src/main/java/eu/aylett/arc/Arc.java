@@ -129,7 +129,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   /**
    * The inner cache mechanism.
    */
-  private final InnerArc<K, V> inner;
+  private final InnerArc inner;
 
   /**
    * Removes all the weak references, so objects that have expired out of the
