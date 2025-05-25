@@ -63,6 +63,8 @@ class ArcTest {
     var arc = new Arc<>(1, i -> "" + i, ForkJoinPool.commonPool());
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(1), equalTo("1"));
+
+    arc.checkSafety();
   }
 
   @Test
@@ -81,6 +83,8 @@ class ArcTest {
 
     // Check that the loader function was called with the expected values
     assertThat(recordedValues, equalTo(List.<@GuardedBy Integer>of(1, 2, 1)));
+
+    arc.checkSafety();
   }
 
   @Test
@@ -116,10 +120,13 @@ class ArcTest {
       expectedValues.add(i);
     }
 
+    // Should not have been eviced, so we won't record it again.
     arc.get(1);
 
     // Check that the loader function was called with the expected values
     assertThat(recordedValues, equalTo(expectedValues));
+
+    arc.checkSafety();
   }
 
   @Test
@@ -138,6 +145,8 @@ class ArcTest {
     }
     toJoin.forEach(ForkJoinTask::join);
     assertThat(recordedValues, containsInAnyOrder(1, 2, 3, 4, 0));
+
+    arc.checkSafety();
   }
 
   @Test
@@ -165,6 +174,7 @@ class ArcTest {
     }
     toJoin.forEach(ForkJoinTask::join);
     assertThat(recordedValues, hasItems(seen.toArray(Integer[]::new)));
+    arc.checkSafety();
   }
 
   @Test
@@ -197,6 +207,8 @@ class ArcTest {
     var t2 = pool.submit(() -> arc.get(2));
     assertThat(t1.get(1, SECONDS), equalTo("1"));
     assertThat(t2.get(1, SECONDS), equalTo("2"));
+
+    arc.checkSafety();
   }
 
   @Test
@@ -254,6 +266,8 @@ class ArcTest {
           assertThat(end, lessThan(start.plusSeconds(95)));
           assertThat(end, greaterThan(start.plusSeconds(85)));
         });
+
+    arc.checkSafety();
   }
 
   static class MockInstantSource implements InstantSource {

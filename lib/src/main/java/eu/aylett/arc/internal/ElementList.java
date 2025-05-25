@@ -29,7 +29,7 @@ public abstract class ElementList {
   }
 
   @ReleasesNoLocks
-  abstract void checkSafety(boolean sizeCheck);
+  abstract void checkSafety();
 
   @Pure
   abstract boolean isForExpiredElements();

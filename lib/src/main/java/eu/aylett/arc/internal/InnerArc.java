@@ -64,27 +64,22 @@ public class InnerArc {
    * The target size for the seen-once LRU list.
    */
   private int targetSeenOnceCapacity;
-  private final boolean safetyChecks;
 
   /**
    * Constructs a new InnerArc with the specified capacity.
    *
    * @param capacity
    *          the maximum number of elements the cache can hold
-   * @param safetyChecks
-   *          whether to check the cache's internal consistency after every
-   *          operation
    */
   @SuppressFBWarnings("EI2")
-  public InnerArc(int capacity, boolean safetyChecks, DelayManager delayManager) {
+  public InnerArc(int capacity, DelayManager delayManager) {
     initialCapacity = capacity;
     this.delayManager = delayManager;
-    seenOnceExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_ONCE_EXPIRING, capacity, safetyChecks);
-    seenMultiExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_MULTI_EXPIRING, capacity, safetyChecks);
-    seenOnceLRU = new LRUElementList(LRUElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring, safetyChecks);
-    seenMultiLRU = new LRUElementList(LRUElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring, safetyChecks);
+    seenOnceExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_ONCE_EXPIRING, capacity);
+    seenMultiExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_MULTI_EXPIRING, capacity);
+    seenOnceLRU = new LRUElementList(LRUElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring);
+    seenMultiLRU = new LRUElementList(LRUElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring);
     targetSeenOnceCapacity = capacity;
-    this.safetyChecks = safetyChecks;
   }
 
   @SideEffectFree
@@ -139,7 +134,6 @@ public class InnerArc {
       }
       return e.get();
     } finally {
-      checkSafety();
       delayManager.poll();
     }
   }
@@ -164,20 +158,16 @@ public class InnerArc {
 
   @ReleasesNoLocks
   @Holding("this")
-  private void checkSafety(@GuardSatisfied InnerArc this) {
-    if (!safetyChecks) {
-      return;
-    }
-
+  public void checkSafety(@GuardSatisfied InnerArc this) {
     if (seenMultiLRU.getCapacity() + seenOnceLRU.getCapacity() != initialCapacity * 2) {
       throw new IllegalStateException("Size mismatch: " + seenMultiLRU.getCapacity() + " + " + seenOnceLRU.getCapacity()
           + " != " + initialCapacity * 2);
     }
 
-    seenOnceLRU.checkSafety(true);
-    seenMultiLRU.checkSafety(true);
-    seenOnceExpiring.checkSafety(true);
-    seenMultiExpiring.checkSafety(true);
+    seenOnceLRU.checkSafety();
+    seenMultiLRU.checkSafety();
+    seenOnceExpiring.checkSafety();
+    seenMultiExpiring.checkSafety();
   }
 
   public <K extends @NonNull Object, V extends @NonNull Object> SoftReference<@Nullable Element<K, V>> createElement(
