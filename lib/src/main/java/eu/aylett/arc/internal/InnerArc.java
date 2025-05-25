@@ -39,24 +39,24 @@ public class InnerArc {
   /**
    * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy ElementList seenOnceLRU;
+  private final @GuardedBy LRUElementList seenOnceLRU;
 
   /**
    * Elements seen multiple times, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy ElementList seenMultiLRU;
+  private final @GuardedBy LRUElementList seenMultiLRU;
 
   /**
    * Elements seen once, that have expired out of the main cache but may inform
    * future adaptivity.
    */
-  private final @GuardedBy ElementList seenOnceExpiring;
+  private final @GuardedBy ExpiredElementList seenOnceExpiring;
 
   /**
    * Elements seen multiple times, that have expired out of the main cache but may
    * inform future adaptivity.
    */
-  private final @GuardedBy ElementList seenMultiExpiring;
+  private final @GuardedBy ExpiredElementList seenMultiExpiring;
   private final int initialCapacity;
   private final DelayManager delayManager;
 
@@ -79,10 +79,10 @@ public class InnerArc {
   public InnerArc(int capacity, boolean safetyChecks, DelayManager delayManager) {
     initialCapacity = capacity;
     this.delayManager = delayManager;
-    seenOnceExpiring = new ElementList(ElementList.Name.SEEN_ONCE_EXPIRING, capacity, null, safetyChecks);
-    seenMultiExpiring = new ElementList(ElementList.Name.SEEN_MULTI_EXPIRING, capacity, null, safetyChecks);
-    seenOnceLRU = new ElementList(ElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring, safetyChecks);
-    seenMultiLRU = new ElementList(ElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring, safetyChecks);
+    seenOnceExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_ONCE_EXPIRING, capacity, safetyChecks);
+    seenMultiExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_MULTI_EXPIRING, capacity, safetyChecks);
+    seenOnceLRU = new LRUElementList(LRUElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring, safetyChecks);
+    seenMultiLRU = new LRUElementList(LRUElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring, safetyChecks);
     targetSeenOnceCapacity = capacity;
     this.safetyChecks = safetyChecks;
   }
@@ -96,10 +96,10 @@ public class InnerArc {
     var owner = e.getOwner();
     return switch (owner) {
       case null -> null;
-      case ElementList l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
-      case ElementList l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
-      case ElementList l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
-      case ElementList l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
+      case LRUElementList l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
+      case LRUElementList l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
+      case ExpiredElementList l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
+      case ExpiredElementList l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
       default -> throw new IllegalStateException("Element " + e + " found in an unknown list " + owner);
     };
   }
