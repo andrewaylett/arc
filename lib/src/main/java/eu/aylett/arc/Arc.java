@@ -118,7 +118,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     this.loader = loader;
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc(Math.max(capacity / 2, 1), safetyChecks, new DelayManager(expiry, refresh, clock));
+    inner = new InnerArc(Math.max(capacity / 2, 1), new DelayManager(expiry, refresh, clock));
   }
 
   /**
@@ -179,6 +179,12 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
         completableFuture = inner.processElement(e);
       }
       return completableFuture.join();
+    }
+  }
+
+  public void checkSafety() {
+    synchronized (inner) {
+      inner.checkSafety();
     }
   }
 }

@@ -34,7 +34,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 class ExpiredElementList extends ElementList {
 
-  private final boolean safetyChecks;
   /** The maximum number of elements the list may hold. */
   private final int capacity;
 
@@ -44,20 +43,15 @@ class ExpiredElementList extends ElementList {
   private int size;
 
   @LockingFree
-  ExpiredElementList(Name name, int capacity, boolean safetyChecks) {
+  ExpiredElementList(Name name, int capacity) {
     super(name);
     this.capacity = capacity;
     this.queue = new ConcurrentLinkedQueue<>();
-    this.safetyChecks = safetyChecks;
   }
 
   @ReleasesNoLocks
   @Override
-  void checkSafety(@GuardedBy ExpiredElementList this, boolean sizeCheck) {
-    if (!this.safetyChecks) {
-      return;
-    }
-
+  void checkSafety(@GuardedBy ExpiredElementList this) {
     var seen = new HashMap<Element<?, ?>, Integer>();
     for (var element : queue) {
       var owner = element.getOwner();
@@ -78,7 +72,7 @@ class ExpiredElementList extends ElementList {
       }
     });
 
-    if (sizeCheck && size > capacity) {
+    if (size > capacity) {
       throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
     }
   }
@@ -115,7 +109,6 @@ class ExpiredElementList extends ElementList {
   @Override
   void evict(@GuardedBy ExpiredElementList this) {
     while (this.size > this.capacity) {
-      checkSafety(false);
       var victim = queue.remove();
       var expired = victim.removeRef(this);
       if (expired) {

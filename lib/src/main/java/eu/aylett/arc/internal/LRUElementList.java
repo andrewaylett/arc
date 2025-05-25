@@ -26,6 +26,7 @@ import org.checkerframework.dataflow.qual.SideEffectFree;
 import java.util.HashMap;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The ElementList class represents a queue used to manage elements in the
@@ -37,36 +38,35 @@ class LRUElementList extends ElementList {
   /** The maximum capacity to set. */
   private final int maxCapacity;
 
-  private final boolean safetyChecks;
-  /** The maximum number of elements the list may hold. */
-  private int capacity;
+  /**
+   * The maximum number of elements the list may hold.
+   */
+  private final AtomicInteger capacity;
 
   /** The target list for expired elements. */
   private final ExpiredElementList expiryTarget;
 
   private final Queue<Element<?, ?>> queue;
 
-  /** The current number of elements in the list. */
-  private int size;
+  /**
+   * The current number of elements in the list.
+   */
+  private final AtomicInteger size = new AtomicInteger(0);
 
   @LockingFree
-  LRUElementList(Name name, int capacity, ExpiredElementList expiryTarget, boolean safetyChecks) {
+  LRUElementList(Name name, int capacity, ExpiredElementList expiryTarget) {
     super(name);
-    this.capacity = capacity;
+    this.capacity = new AtomicInteger(capacity);
     this.maxCapacity = (capacity * 2) - 1;
     this.expiryTarget = expiryTarget;
     this.queue = new ConcurrentLinkedQueue<>();
-    this.safetyChecks = safetyChecks;
   }
 
   @ReleasesNoLocks
   @Override
-  void checkSafety(@GuardedBy LRUElementList this, boolean sizeCheck) {
-    if (!this.safetyChecks) {
-      return;
-    }
-
+  void checkSafety(@GuardedBy LRUElementList this) {
     var seen = new HashMap<Element<?, ?>, Integer>();
+    var startSize = this.size.get();
     for (var element : queue) {
       var owner = element.getOwner();
       if (owner != this) {
@@ -77,8 +77,8 @@ class LRUElementList extends ElementList {
         throw new IllegalStateException("Element in LRU list has only weak value: " + element);
       }
     }
-    if (seen.size() != this.size) {
-      throw new IllegalStateException("Size mismatch: found " + seen.size() + " items != expected " + this.size);
+    if (seen.size() != startSize) {
+      throw new IllegalStateException("Size mismatch: found " + seen.size() + " items != expected " + startSize);
     }
     seen.forEach((k, v) -> {
       if (k.refCount() > v) {
@@ -86,7 +86,7 @@ class LRUElementList extends ElementList {
       }
     });
 
-    if (sizeCheck && size > capacity) {
+    if (size.get() > capacity.get()) {
       throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
     }
   }
@@ -105,7 +105,7 @@ class LRUElementList extends ElementList {
    */
   @ReleasesNoLocks
   void grow(@GuardedBy LRUElementList this, Element<?, ?> newElement) {
-    this.capacity = Math.min(this.capacity + 1, this.maxCapacity);
+    this.capacity.updateAndGet(current -> Math.min(current + 1, this.maxCapacity));
     push(newElement);
   }
 
@@ -125,7 +125,7 @@ class LRUElementList extends ElementList {
     }
     queue.add(newElement);
     if (newlyAdded) {
-      size += 1;
+      size.incrementAndGet();
     }
     evict();
   }
@@ -133,25 +133,38 @@ class LRUElementList extends ElementList {
   /** Decreases the capacity of the list and evicts elements if necessary. */
   @ReleasesNoLocks
   boolean shrink(@GuardedBy LRUElementList this) {
-    var shrunk = this.capacity > 1;
-    this.capacity = Math.max(this.capacity - 1, 1);
+    int oldCapacity;
+    int newCapacity;
+    do {
+      oldCapacity = this.capacity.getAcquire();
+      if (oldCapacity <= 1) {
+        return false; // Cannot shrink below 1
+      }
+      newCapacity = oldCapacity - 1;
+    } while (!this.capacity.weakCompareAndSetRelease(oldCapacity, newCapacity));
     evict();
-    return shrunk;
+    return true;
   }
 
   /** Evicts the least recently used element if the list exceeds its capacity. */
   @ReleasesNoLocks
   @Override
   void evict(@GuardedBy LRUElementList this) {
-    while (this.size > this.capacity) {
-      checkSafety(false);
+    do {
+      var capacity = this.capacity.getAcquire();
+      var size = this.size.decrementAndGet();
+      if (size < capacity) {
+        this.size.incrementAndGet();
+        return;
+      }
       var victim = queue.remove();
       var expired = victim.removeRef(this);
       if (expired) {
-        this.size -= 1;
         expiryTarget.push(victim);
+      } else {
+        this.size.incrementAndGet();
       }
-    }
+    } while (true);
   }
 
   @SideEffectFree
@@ -160,14 +173,13 @@ class LRUElementList extends ElementList {
     return "ElementList-" + this.name + " (" + this.size + "/" + this.capacity + ")";
   }
 
-  @SideEffectFree
+  @ReleasesNoLocks
   int getCapacity(@GuardSatisfied LRUElementList this) {
-    return this.capacity;
+    return this.capacity.get();
   }
 
   @Override
   public void noteRemovedElement() {
-    this.size -= 1;
+    this.size.decrementAndGet();
   }
-
 }
