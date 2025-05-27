@@ -16,6 +16,7 @@
 
 package eu.aylett.arc.internal;
 
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 
 import java.time.Duration;
@@ -46,13 +47,14 @@ public final class DelayManager {
     return delayedElement;
   }
 
+  @MayReleaseLocks
   public void poll() {
     DelayedElement element;
-    while ((element = queue.poll()) != null) {
-      element.expireFromDelay();
-    }
     while ((element = refreshQueue.poll()) != null) {
       element.refresh();
+    }
+    while ((element = queue.poll()) != null) {
+      element.expireFromDelay();
     }
   }
 

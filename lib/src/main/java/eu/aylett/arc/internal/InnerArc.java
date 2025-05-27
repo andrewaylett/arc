@@ -17,46 +17,46 @@
 package eu.aylett.arc.internal;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import org.checkerframework.checker.lock.qual.GuardSatisfied;
-import org.checkerframework.checker.lock.qual.GuardedBy;
+import org.checkerframework.checker.initialization.qual.NotOnlyInitialized;
+import org.checkerframework.checker.lock.qual.EnsuresLockHeld;
+import org.checkerframework.checker.lock.qual.EnsuresLockHeldIf;
 import org.checkerframework.checker.lock.qual.Holding;
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.checkerframework.dataflow.qual.SideEffectFree;
-import org.jspecify.annotations.NonNull;
 
-import java.lang.ref.SoftReference;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ForkJoinPool;
-import java.util.function.Function;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The InnerArc class manages the internal cache mechanism for the Arc class. It
  * maintains multiple lists to track elements based on their usage patterns.
  */
 public class InnerArc {
+  private final Lock evictionLock = new ReentrantLock();
 
   /**
    * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy LRUElementList seenOnceLRU;
+  private final @NotOnlyInitialized LRUElementList seenOnceLRU;
 
   /**
    * Elements seen multiple times, managed as a Least Recently Used (LRU) cache.
    */
-  private final @GuardedBy LRUElementList seenMultiLRU;
+  protected final @NotOnlyInitialized LRUElementList seenMultiLRU;
 
   /**
    * Elements seen once, that have expired out of the main cache but may inform
    * future adaptivity.
    */
-  private final @GuardedBy ExpiredElementList seenOnceExpiring;
+  private final @NotOnlyInitialized ExpiredElementList seenOnceExpiring;
+
+  public final @NotOnlyInitialized UnownedElementList unowned;
 
   /**
    * Elements seen multiple times, that have expired out of the main cache but may
    * inform future adaptivity.
    */
-  private final @GuardedBy ExpiredElementList seenMultiExpiring;
+  private final @NotOnlyInitialized ExpiredElementList seenMultiExpiring;
   private final int initialCapacity;
   private final DelayManager delayManager;
 
@@ -75,67 +75,12 @@ public class InnerArc {
   public InnerArc(int capacity, DelayManager delayManager) {
     initialCapacity = capacity;
     this.delayManager = delayManager;
-    seenOnceExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_ONCE_EXPIRING, capacity);
-    seenMultiExpiring = new ExpiredElementList(LRUElementList.Name.SEEN_MULTI_EXPIRING, capacity);
-    seenOnceLRU = new LRUElementList(LRUElementList.Name.SEEN_ONCE_LRU, capacity, seenOnceExpiring);
-    seenMultiLRU = new LRUElementList(LRUElementList.Name.SEEN_MULTI_LRU, capacity, seenMultiExpiring);
+    unowned = new UnownedElementList(this);
+    seenOnceExpiring = new ExpiredElementList.SeenOnce(capacity, this);
+    seenMultiExpiring = new ExpiredElementList.SeenMulti(capacity, this);
+    seenOnceLRU = new LRUElementList(ListId.SEEN_ONCE_LRU, capacity, seenOnceExpiring, this);
+    seenMultiLRU = new LRUElementList(ListId.SEEN_MULTI_LRU, capacity, seenMultiExpiring, this);
     targetSeenOnceCapacity = capacity;
-  }
-
-  @SideEffectFree
-  @Holding("this")
-  private @Nullable ListId ownerFor(@GuardSatisfied InnerArc this, @Nullable Element<?, ?> e) {
-    if (e == null) {
-      return null;
-    }
-    var owner = e.getOwner();
-    return switch (owner) {
-      case null -> null;
-      case LRUElementList l when l == seenOnceLRU -> ListId.SEEN_ONCE_LRU;
-      case LRUElementList l when l == seenMultiLRU -> ListId.SEEN_MULTI_LRU;
-      case ExpiredElementList l when l == seenOnceExpiring -> ListId.SEEN_ONCE_EXPIRING;
-      case ExpiredElementList l when l == seenMultiExpiring -> ListId.SEEN_MULTI_EXPIRING;
-      default -> throw new IllegalStateException("Element " + e + " found in an unknown list " + owner);
-    };
-  }
-
-  /**
-   * Processes an element that was found in the cache. Updates the element's
-   * position in the appropriate list based on its usage.
-   */
-  @ReleasesNoLocks
-  @Holding("this")
-  public <V extends @NonNull Object> CompletableFuture<V> processElement(@GuardedBy InnerArc this, Element<?, V> e) {
-    try {
-      var oldOwner = ownerFor(e);
-      switch (oldOwner) {
-        case null ->
-          // New or expired out of the cache
-          enqueueNewElement(e);
-        case SEEN_ONCE_LRU, SEEN_MULTI_LRU -> {
-          if (!e.containsValue()) {
-            throw new IllegalStateException("Element in LRU list has no value: " + e);
-          }
-          seenMultiLRU.push(e);
-        }
-        case SEEN_ONCE_EXPIRING -> {
-          targetSeenOnceCapacity = Math.min(initialCapacity * 2 - 1, targetSeenOnceCapacity + 1);
-          seenMultiLRU.push(e);
-        }
-        case SEEN_MULTI_EXPIRING -> {
-          var shrunk = seenOnceLRU.shrink();
-          if (shrunk) {
-            seenMultiLRU.grow(e);
-          } else {
-            seenMultiLRU.push(e);
-          }
-          targetSeenOnceCapacity = Math.max(1, targetSeenOnceCapacity - 1);
-        }
-      }
-      return e.get();
-    } finally {
-      delayManager.poll();
-    }
   }
 
   /**
@@ -145,20 +90,22 @@ public class InnerArc {
    * @param newElement
    *          the new element to enqueue
    */
+  @Holding("#1.lock")
   @ReleasesNoLocks
-  @Holding("this")
-  private void enqueueNewElement(@GuardSatisfied InnerArc this, Element<?, ?> newElement) {
+  public void enqueueNewElement(Element<?, ?> newElement) {
     if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity) {
       seenOnceLRU.push(newElement);
     } else {
-      seenMultiLRU.shrink();
-      seenOnceLRU.grow(newElement);
+      if (seenMultiLRU.shrink()) {
+        seenOnceLRU.grow(newElement);
+      } else {
+        seenOnceLRU.push(newElement);
+      }
     }
   }
 
-  @ReleasesNoLocks
-  @Holding("this")
-  public void checkSafety(@GuardSatisfied InnerArc this) {
+  @MayReleaseLocks
+  public void checkSafety() {
     if (seenMultiLRU.getCapacity() + seenOnceLRU.getCapacity() != initialCapacity * 2) {
       throw new IllegalStateException("Size mismatch: " + seenMultiLRU.getCapacity() + " + " + seenOnceLRU.getCapacity()
           + " != " + initialCapacity * 2);
@@ -170,8 +117,55 @@ public class InnerArc {
     seenMultiExpiring.checkSafety();
   }
 
-  public <K extends @NonNull Object, V extends @NonNull Object> SoftReference<@Nullable Element<K, V>> createElement(
-      @GuardedBy InnerArc this, K key, Function<? super K, V> loader, ForkJoinPool pool) {
-    return new SoftReference<>(new Element<>(key, loader, (l) -> CompletableFuture.supplyAsync(l, pool), delayManager));
+  @Holding("#1.lock")
+  @ReleasesNoLocks
+  public DelayedElement delayManage(Element<?, ?> element) {
+    return delayManager.add(element);
+  }
+
+  @Holding("#1.lock")
+  @ReleasesNoLocks
+  public void enqueueSeenOnceElement(Element<?, ?> e) {
+    targetSeenOnceCapacity = Math.min(initialCapacity * 2 - 1, targetSeenOnceCapacity + 1);
+    seenMultiLRU.push(e);
+  }
+
+  @ReleasesNoLocks
+  @Holding("#1.lock")
+  public void enqueueSeenMultiElement(Element<?, ?> e) {
+    var shrunk = seenOnceLRU.shrink();
+    if (shrunk) {
+      seenMultiLRU.grow(e);
+    } else {
+      seenMultiLRU.push(e);
+    }
+    targetSeenOnceCapacity = Math.max(1, targetSeenOnceCapacity - 1);
+  }
+
+  @MayReleaseLocks
+  @Holding("this.evictionLock")
+  public void evict() {
+    seenMultiLRU.evict();
+    seenOnceLRU.evict();
+    seenMultiExpiring.evict();
+    seenOnceExpiring.evict();
+    delayManager.poll();
+  }
+
+  @EnsuresLockHeldIf(expression = "this.evictionLock", result = true)
+  @ReleasesNoLocks
+  public boolean tryEvictionLock() {
+    return evictionLock.tryLock();
+  }
+
+  @EnsuresLockHeld("this.evictionLock")
+  @ReleasesNoLocks
+  public void takeEvictionLock() {
+    evictionLock.lock();
+  }
+
+  @MayReleaseLocks
+  public void releaseEvictionLock() {
+    evictionLock.unlock();
   }
 }

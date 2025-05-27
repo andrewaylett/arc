@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,6 @@
 
 package eu.aylett.arc.internal;
 
-enum ListId {
-  SEEN_ONCE_LRU, SEEN_MULTI_LRU, SEEN_ONCE_EXPIRING, SEEN_MULTI_EXPIRING,
+public enum ListId {
+  SEEN_ONCE_LRU, SEEN_MULTI_LRU, SEEN_ONCE_EXPIRING, SEEN_MULTI_EXPIRING, UNOWNED
 }
