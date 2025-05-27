@@ -19,6 +19,8 @@ package eu.aylett.arc;
 import eu.aylett.arc.internal.DelayManager;
 import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
+import eu.aylett.arc.internal.UnownedElementList;
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -29,6 +31,7 @@ import java.time.InstantSource;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -54,6 +57,14 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   private final ForkJoinPool pool;
 
   /**
+   * The map of elements stored in the cache.
+   */
+  private final ConcurrentHashMap<K, SoftReference<@Nullable Element<K, V>>> elements;
+  private final UnownedElementList unowned;
+  private final InnerArc inner;
+  private final AtomicBoolean needsEviction = new AtomicBoolean(false);
+
+  /**
    * Constructs a new Arc with the specified capacity, loader function, and the
    * common ForkJoinPool.
    *
@@ -68,7 +79,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    *          loading, we will refresh it
    */
   public Arc(int capacity, Function<K, V> loader, Duration expiry, Duration refresh) {
-    this(capacity, loader, ForkJoinPool.commonPool(), false, expiry, refresh, Clock.systemUTC());
+    this(capacity, loader, ForkJoinPool.commonPool(), expiry, refresh, Clock.systemUTC());
   }
 
   /**
@@ -98,11 +109,11 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    *          the ForkJoinPool that the loader will be submitted to
    */
   public Arc(int capacity, Function<? super K, V> loader, Duration expiry, Duration refresh, ForkJoinPool pool) {
-    this(capacity, loader, pool, false, expiry, refresh, Clock.systemUTC());
+    this(capacity, loader, pool, expiry, refresh, Clock.systemUTC());
   }
 
-  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, boolean safetyChecks, Duration expiry,
-      Duration refresh, InstantSource clock) {
+  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, Duration expiry, Duration refresh,
+      InstantSource clock) {
     if (capacity < 1) {
       throw new IllegalArgumentException("Capacity must be at least 1");
     }
@@ -119,17 +130,8 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     this.pool = pool;
     elements = new ConcurrentHashMap<>();
     inner = new InnerArc(Math.max(capacity / 2, 1), new DelayManager(expiry, refresh, clock));
+    unowned = inner.unowned;
   }
-
-  /**
-   * The map of elements stored in the cache.
-   */
-  private final ConcurrentHashMap<K, SoftReference<@Nullable Element<K, V>>> elements;
-
-  /**
-   * The inner cache mechanism.
-   */
-  private final InnerArc inner;
 
   /**
    * Removes all the weak references, so objects that have expired out of the
@@ -138,11 +140,17 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    * Without this, we may retain references to expired objects that have yet to be
    * GC'd. Primarily useful for testing.
    */
+  @MayReleaseLocks
   public void weakExpire() {
     elements.values().forEach(elementSoftReference -> {
       var element = elementSoftReference.get();
       if (element != null) {
-        element.weakExpire();
+        element.lock();
+        try {
+          element.weakExpire();
+        } finally {
+          element.unlock();
+        }
       }
     });
   }
@@ -155,9 +163,13 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
    *          the key whose associated value is to be returned
    * @return the value associated with the specified key
    */
+  @MayReleaseLocks
   public V get(K key) {
     while (true) {
-      var ref = elements.computeIfAbsent(key, k -> inner.createElement(k, loader, pool));
+      var ref = elements.computeIfAbsent(key, k -> {
+        var element = new Element<>(k, loader, (l) -> CompletableFuture.supplyAsync(l, pool), unowned);
+        return new SoftReference<>(element);
+      });
       var e = ref.get();
       if (e == null) {
         // Remove if expired and not already removed/replaced
@@ -174,17 +186,64 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
             });
         continue;
       }
+      e.lock();
       CompletableFuture<V> completableFuture;
-      synchronized (inner) {
-        completableFuture = inner.processElement(e);
+      try {
+        completableFuture = e.get();
+        // We set this before spawning the eviction task,
+        // so if there's no running eviction the value must be true when the new task
+        // starts.
+        needsEviction.setRelease(true);
+      } finally {
+        e.unlock();
       }
+      pool.submit(this::runEviction);
       return completableFuture.join();
     }
   }
 
+  @MayReleaseLocks
   public void checkSafety() {
-    synchronized (inner) {
+    inner.takeEvictionLock();
+    try {
+      inner.evict();
       inner.checkSafety();
+    } finally {
+      inner.releaseEvictionLock();
+    }
+  }
+
+  @MayReleaseLocks
+  private void runEviction() {
+    // If needsEviction is set above,
+    // we will either continue to loop or we know that a new task will be started
+    // and will run the eviction.
+    while (needsEviction.getAcquire() && inner.tryEvictionLock()) {
+      // It does not matter if this task is the one started by the most recent get()
+      // call,
+      // if we get the lock the other task will exit.
+      try {
+        // We loop while holding the lock, but there's a chance that we don't even need
+        // to run eviction once.
+        // If our thread paused between the get and the try, allowing a running eviction
+        // to finish.
+        while (needsEviction.getAcquire()) {
+          // Mark false before we start, so if anything changes while we're evicting then
+          // we'll run again.
+          needsEviction.setRelease(false);
+          // Retake the lock to satisfy the lock checker
+          inner.takeEvictionLock();
+          try {
+            inner.evict();
+          } finally {
+            inner.releaseEvictionLock();
+          }
+        }
+      } finally {
+        inner.releaseEvictionLock();
+        // We will loop again, re-taking the lock, if the flag is set while releasing
+        // the lock, but no-one else has taken it.
+      }
     }
   }
 }

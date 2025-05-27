@@ -17,16 +17,19 @@
 package eu.aylett.arc.internal;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.checkerframework.checker.lock.qual.EnsuresLockHeld;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
-import org.checkerframework.checker.lock.qual.GuardedBy;
-import org.checkerframework.checker.lock.qual.LockingFree;
+import org.checkerframework.checker.lock.qual.Holding;
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.dataflow.qual.SideEffectFree;
+import org.checkerframework.dataflow.qual.Pure;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -40,6 +43,7 @@ import java.util.function.Supplier;
  *          the type of mapped values
  */
 public final class Element<K extends @NonNull Object, V extends @NonNull Object> {
+  private final Lock lock = new ReentrantLock();
   /** The key associated with this element. */
   private final K key;
 
@@ -47,8 +51,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   private final Function<? super K, V> loader;
 
   private final Function<Supplier<V>, CompletableFuture<V>> pool;
-
-  private final DelayManager delayManager;
+  private final UnownedElementList unowned;
 
   /**
    * A weak reference to the value associated with this element, if it's been
@@ -59,28 +62,40 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   /** A CompletableFuture representing the value associated with this element. */
   private @Nullable CompletableFuture<V> value;
 
-  private @Nullable @GuardedBy ElementList owner;
+  private ElementList owner;
   private @Nullable DelayedElement currentDelayedElement = null;
   private int ownerRefCount = 0;
 
-  @LockingFree
   @SuppressFBWarnings("EI2")
   public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool,
-      DelayManager delayManager) {
+      UnownedElementList owner) {
     this.key = key;
     this.loader = loader;
     this.pool = pool;
-    this.delayManager = delayManager;
+    this.owner = owner;
+    this.unowned = owner;
+  }
+
+  @EnsuresLockHeld("this.lock")
+  public void lock() {
+    lock.lock();
+  }
+
+  @MayReleaseLocks
+  public void unlock() {
+    lock.unlock();
   }
 
   /**
    * Retrieves the value associated with this element. If the value is not
    * present, it uses the loader function to load the value.
    */
+  @Holding("this.lock")
   @ReleasesNoLocks
-  CompletableFuture<V> get() {
+  public CompletableFuture<V> get() {
+    owner.processElement(this);
     var currentOwner = this.owner;
-    if (currentOwner == null) {
+    if (currentOwner == unowned) {
       throw new IllegalStateException("Called get on an element with no owner");
     }
     if (currentOwner.isForExpiredElements()) {
@@ -95,64 +110,62 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
         if (currentWeakValue == null || !currentWeakValue.refersTo(v)) {
           this.weakValue = new WeakReference<>(v);
         }
-        return currentValue;
       }
+      return currentValue.copy();
     }
     var currentWeakValue = this.weakValue;
     if (currentWeakValue != null) {
       var v = currentWeakValue.get();
       if (v != null) {
-        if (currentValue == null) {
-          this.value = currentValue = CompletableFuture.completedFuture(v);
-          return currentValue;
-        }
+        return (this.value = CompletableFuture.completedFuture(v));
       } else {
         this.weakValue = null;
       }
     }
-    if (currentValue == null) {
-      currentValue = load();
-    }
-    return currentValue;
+    return load().copy();
   }
 
-  @SideEffectFree
+  @Holding("this.lock")
+  @ReleasesNoLocks
   public boolean containsValue() {
     return value != null;
   }
 
-  @SideEffectFree
+  @Holding("this.lock")
+  @ReleasesNoLocks
   boolean containsWeakValue() {
     var weakValue = this.weakValue;
     return weakValue != null && !weakValue.refersTo(null);
   }
 
-  @SideEffectFree
-  @GuardedBy @Nullable ElementList getOwner() {
+  @Pure
+  @Holding("this.lock")
+  ElementList getOwner() {
     return owner;
   }
 
+  @Holding("this.lock")
+  @ReleasesNoLocks
   CompletableFuture<V> load() {
-    var value = pool.apply(() -> {
-      var val = loader.apply(key);
-      resetDelay();
-      return val;
-    });
+    var value = pool.apply(() -> loader.apply(key));
+    value.thenRun(this::lockAndResetDelay);
     this.value = value;
     return value;
   }
 
+  @Holding("this.lock")
+  @ReleasesNoLocks
   private void resetDelay() {
-    this.currentDelayedElement = delayManager.add(this);
+    this.currentDelayedElement = owner.delayManage(this);
   }
 
-  boolean addRef(@GuardSatisfied Element<K, V> this, @GuardedBy ElementList fromOwner) {
+  @Holding("this.lock")
+  @ReleasesNoLocks
+  boolean addRef(ElementList fromOwner) {
     var oldOwner = this.owner;
     if (oldOwner != fromOwner) {
-      if (oldOwner != null) {
-        // Let our previous owner know that we're being added to a different list
-        oldOwner.noteRemovedElement();
-      }
+      // Let our previous owner know that we're being added to a different list
+      oldOwner.noteRemovedElement();
       owner = fromOwner;
       ownerRefCount = 1;
       return true;
@@ -162,6 +175,8 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     }
   }
 
+  @Holding("this.lock")
+  @ReleasesNoLocks
   boolean removeRef(ElementList fromOwner) {
     if (owner != fromOwner) {
       // We've been added to a different list already
@@ -180,9 +195,10 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
    * the object if necessary.
    */
   @ReleasesNoLocks
+  @Holding("this.lock")
   void expire() {
     value = null;
-    owner = null;
+    unowned.push(this);
   }
 
   /**
@@ -191,7 +207,8 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
    * <p>
    * Primarily useful for testing.
    */
-  @LockingFree
+  @Holding("this.lock")
+  @ReleasesNoLocks
   public void weakExpire() {
     if (this.value == null) {
       // No strong reference, so a GC may clear the value -- and we pretend it has.
@@ -203,21 +220,20 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     return ownerRefCount;
   }
 
+  @Holding("this.lock")
+  @ReleasesNoLocks
   public void delayExpired(DelayedElement delayedElement) {
     if (delayedElement == currentDelayedElement) {
       value = null;
       weakValue = null;
-      var currentOwner = this.owner;
-      if (currentOwner != null) {
-        currentOwner.noteRemovedElement();
-        this.owner = null;
-      }
+      unowned.push(this);
     }
   }
 
+  @Holding("this.lock")
+  @ReleasesNoLocks
   public void reload() {
-    var currentOwner = this.owner;
-    if (currentOwner != null && currentOwner.name == ElementList.Name.SEEN_MULTI_LRU) {
+    if (this.owner.name == ListId.SEEN_MULTI_LRU) {
       load();
     }
   }
@@ -228,5 +244,18 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
     var weakValueString = currentWeakValue == null ? "null" : currentWeakValue.get();
     return "Element{" + "key=" + key + ", value=" + value + ", weakValue=" + weakValueString + ", owner=" + owner
         + ", ownerRefCount=" + ownerRefCount + '}';
+  }
+
+  /**
+   * To be run in a separate thread to load the value asynchronously.
+   */
+  @MayReleaseLocks
+  private void lockAndResetDelay() {
+    this.lock();
+    try {
+      resetDelay();
+    } finally {
+      this.unlock();
+    }
   }
 }

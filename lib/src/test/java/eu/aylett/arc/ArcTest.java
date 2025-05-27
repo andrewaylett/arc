@@ -24,12 +24,12 @@ import org.hamcrest.Matcher;
 import org.hamcrest.MatcherAssert;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
@@ -46,9 +46,10 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.lessThan;
 
+import static java.util.Collections.synchronizedList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-@SuppressWarnings({"argument", "type.argument"})
+@SuppressWarnings({"argument", "type.argument", "method.guarantee.violated"})
 class ArcTest {
   public static <T> org.hamcrest.Matcher<@GuardedBy @PolyNull @Initialized T> equalTo(@GuardedBy @PolyNull T operand) {
     return org.hamcrest.core.IsEqual.equalTo(operand);
@@ -106,7 +107,7 @@ class ArcTest {
 
   @Test
   void testLFUElements() {
-    var recordedValues = new ArrayList<@NonNull Integer>();
+    var recordedValues = synchronizedList(new ArrayList<@NonNull Integer>());
     var arc = new Arc<Integer, String>(5, i -> {
       recordedValues.add(i);
       return i.toString();
@@ -123,8 +124,10 @@ class ArcTest {
     // Should not have been eviced, so we won't record it again.
     arc.get(1);
 
-    // Check that the loader function was called with the expected values
-    assertThat(recordedValues, equalTo(expectedValues));
+    synchronized (recordedValues) {
+      // Check that the loader function was called with the expected values
+      assertThat(recordedValues, equalTo(expectedValues));
+    }
 
     arc.checkSafety();
   }
@@ -153,10 +156,11 @@ class ArcTest {
   void testParallelLoadingWithExpiry() {
     var recordedValues = new ConcurrentLinkedDeque<Integer>();
     var pool = ForkJoinPool.commonPool();
+    var clock = new MockInstantSource();
     var arc = new Arc<Integer, String>(50, i -> {
       recordedValues.add(i);
       return i.toString();
-    }, pool, true, Duration.ofMinutes(1), Duration.ofSeconds(30), Clock.systemUTC());
+    }, pool, Duration.ofMinutes(1), Duration.ofSeconds(30), clock);
     var random = new Random(0);
     var seen = new ArrayList<Integer>();
 
@@ -213,11 +217,11 @@ class ArcTest {
 
   @Test
   void repeatedElementsAreRefreshed() {
-    final var testCount = 1000;
+    final var testCount = 100070;
     var clock = new MockInstantSource();
-    var recordedValues = new ArrayList<Integer>();
-    var zeroTimestamps = new ArrayList<Instant>();
-    var minusOneTimestamps = new ArrayList<Instant>();
+    var recordedValues = synchronizedList(new ArrayList<Integer>());
+    var zeroTimestamps = synchronizedList(new ArrayList<Instant>());
+    var minusOneTimestamps = synchronizedList(new ArrayList<Instant>());
 
     var arc = new Arc<Integer, String>(1000, i -> {
       recordedValues.add(i);
@@ -228,44 +232,54 @@ class ArcTest {
         minusOneTimestamps.add(clock.instant());
       }
       return "" + i;
-    }, ForkJoinPool.commonPool(), true, Duration.ofSeconds(60), Duration.ofSeconds(30), clock);
+    }, ForkJoinPool.commonPool(), Duration.ofSeconds(60), Duration.ofSeconds(30), clock);
 
     for (var i = 0; i < testCount; i++) {
-      clock.value.incrementAndGet();
       arc.get(i);
-      if (i % 10 == 0) {
+      if (i % 100 == 0) {
         arc.get(0);
       }
-      if (i % 90 == 0) {
+      if (i % 900 == 0) {
         arc.get(-1);
+      }
+      clock.value.addAndGet(1);
+      if (i % 1000 == 0) {
+        arc.checkSafety();
       }
     }
 
-    var record = recordedValues.stream().collect(Collectors.groupingBy((v) -> v, Collectors.counting()));
-    // Would be 100 without any caching or refreshing
-    assertThat(record.get(0), lessThan(50L));
-    // Would be ~15 with no early refreshes
-    assertThat(record.get(0), greaterThan(25L));
+    Map<Integer, Long> record;
+    synchronized (recordedValues) {
+      record = recordedValues.stream().collect(Collectors.groupingBy((v) -> v, Collectors.counting()));
+    }
+    // Would be testCount/100 without any caching or refreshing
+    assertThat(record.get(0), lessThan(testCount / 200L));
+    // Would be testCount/600 with no early refreshes
+    assertThat(record.get(0), greaterThan(testCount / 500L));
     for (var i = 1; i < testCount; i++) {
       assertThat(record.get(i), equalTo(1L));
     }
 
-    IntStream.range(0, zeroTimestamps.size() - 1).mapToObj(start -> zeroTimestamps.subList(start, start + 2))
-        .forEach(adjacentPair -> {
-          var start = adjacentPair.getFirst();
-          var end = adjacentPair.getLast();
-          assertThat(end, lessThan(start.plusSeconds(35)));
-          assertThat(end, greaterThan(start.plusSeconds(29)));
-        });
+    synchronized (zeroTimestamps) {
+      IntStream.range(0, zeroTimestamps.size() - 1).mapToObj(start -> zeroTimestamps.subList(start, start + 2))
+          .forEach(adjacentPair -> {
+            var start = adjacentPair.getFirst();
+            var end = adjacentPair.getLast();
+            assertThat(end.toEpochMilli(), lessThan(start.plusSeconds(35).toEpochMilli()));
+            assertThat(end.toEpochMilli(), greaterThan(start.plusSeconds(29).toEpochMilli()));
+          });
+    }
 
-    IntStream.range(0, minusOneTimestamps.size() - 1).mapToObj(start -> minusOneTimestamps.subList(start, start + 2))
-        .forEach(adjacentPair -> {
-          // Fetched every 90s, so will expire between fetches and not be refreshed.
-          var start = adjacentPair.getFirst();
-          var end = adjacentPair.getLast();
-          assertThat(end, lessThan(start.plusSeconds(95)));
-          assertThat(end, greaterThan(start.plusSeconds(85)));
-        });
+    synchronized (minusOneTimestamps) {
+      IntStream.range(0, minusOneTimestamps.size() - 1).mapToObj(start -> minusOneTimestamps.subList(start, start + 2))
+          .forEach(adjacentPair -> {
+            // Fetched every 90s, so will expire between fetches and not be refreshed.
+            var start = adjacentPair.getFirst();
+            var end = adjacentPair.getLast();
+            assertThat(end.toEpochMilli(), lessThan(start.plusSeconds(95).toEpochMilli()));
+            assertThat(end.toEpochMilli(), greaterThan(start.plusSeconds(85).toEpochMilli()));
+          });
+    }
 
     arc.checkSafety();
   }
@@ -275,7 +289,7 @@ class ArcTest {
 
     @Override
     public Instant instant() {
-      return Instant.ofEpochSecond(value.get());
+      return Instant.ofEpochMilli(value.get() * 100);
     }
   }
 }

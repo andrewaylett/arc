@@ -18,6 +18,7 @@ package eu.aylett.arc.internal;
 
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.GuardedBy;
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.jspecify.annotations.Nullable;
 
@@ -54,12 +55,24 @@ public final class DelayedElement implements Delayed {
     return result;
   }
 
+  @MayReleaseLocks
   public void expireFromDelay() {
-    element.delayExpired(this);
+    element.lock();
+    try {
+      element.delayExpired(this);
+    } finally {
+      element.unlock();
+    }
   }
 
+  @MayReleaseLocks
   public void refresh() {
-    element.reload();
+    element.lock();
+    try {
+      element.reload();
+    } finally {
+      element.unlock();
+    }
   }
 
   @Override
@@ -74,5 +87,11 @@ public final class DelayedElement implements Delayed {
   @Override
   public int hashCode(@GuardSatisfied DelayedElement this) {
     return Objects.hash(element, expiryTime);
+  }
+
+  @Override
+  @SideEffectFree
+  public String toString(@GuardSatisfied DelayedElement this) {
+    return "DelayedElement{" + "element=" + element + ", expiryTime=" + expiryTime + '}';
   }
 }
