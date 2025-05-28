@@ -28,9 +28,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
@@ -154,7 +156,7 @@ class ArcTest {
 
   @Test
   void testParallelLoadingWithExpiry() {
-    var recordedValues = new ConcurrentLinkedDeque<Integer>();
+    var recordedValues = ConcurrentHashMap.<Integer>newKeySet();
     var pool = ForkJoinPool.commonPool();
     var clock = new MockInstantSource();
     var arc = new Arc<Integer, String>(50, i -> {
@@ -162,19 +164,21 @@ class ArcTest {
       return i.toString();
     }, pool, Duration.ofMinutes(1), Duration.ofSeconds(30), clock);
     var random = new Random(0);
-    var seen = new ArrayList<Integer>();
+    var seen = new HashSet<Integer>();
 
     var toJoin = new ArrayList<ForkJoinTask<String>>();
-    for (var i = 1; i <= 50000; i++) {
+    for (var i = 1; i <= 500000; i++) {
       var ii = random.nextInt(512);
-      if (!seen.contains(ii)) {
-        seen.add(ii);
-      }
+      seen.add(ii);
       toJoin.add(pool.submit(() -> arc.get(ii)));
       while (toJoin.size() > random.nextInt(512)) {
         toJoin.remove(random.nextInt(toJoin.size())).join();
       }
-      arc.weakExpire();
+      if (i % 100 == 0) {
+        // Every 100 iterations, expire the weakly cached elements
+        arc.weakExpire();
+      }
+      clock.value.incrementAndGet();
     }
     toJoin.forEach(ForkJoinTask::join);
     assertThat(recordedValues, hasItems(seen.toArray(Integer[]::new)));

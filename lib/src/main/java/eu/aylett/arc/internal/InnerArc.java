@@ -32,6 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * maintains multiple lists to track elements based on their usage patterns.
  */
 public class InnerArc {
+  // This lock must not be taken while holding a lock on an Element.
   private final Lock evictionLock = new ReentrantLock();
 
   /**
