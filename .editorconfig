@@ -16,3 +16,6 @@ ij_xml_attribute_wrap = normal
 
 [*.{yml,yaml}]
 ij_yaml_indent_sequence_value = false
+
+[*.bat]
+end_of_line = crlf
