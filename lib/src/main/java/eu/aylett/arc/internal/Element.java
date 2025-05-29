@@ -45,7 +45,7 @@ import java.util.function.Supplier;
 public final class Element<K extends @NonNull Object, V extends @NonNull Object> {
   private final Lock lock = new ReentrantLock();
   /** The key associated with this element. */
-  private final K key;
+  public final K key;
 
   /** The function used to load values. */
   private final Function<? super K, V> loader;
@@ -57,7 +57,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
    * A weak reference to the value associated with this element, if it's been
    * computed.
    */
-  private @Nullable WeakReference<@Nullable V> weakValue;
+  private WeakReference<@Nullable V> weakValue = new WeakReference<>(null);
 
   /** A CompletableFuture representing the value associated with this element. */
   private @Nullable CompletableFuture<V> value;
@@ -104,22 +104,16 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
     var currentValue = this.value;
     if (currentValue == null || currentValue.isCompletedExceptionally()) {
-      var currentWeakValue = this.weakValue;
-      if (currentWeakValue != null) {
-        var v = currentWeakValue.get();
-        if (v != null) {
-          return (this.value = CompletableFuture.completedFuture(v)).copy();
-        } else {
-          this.weakValue = null;
-        }
+      var v = this.weakValue.get();
+      if (v != null) {
+        return (this.value = CompletableFuture.completedFuture(v)).copy();
       }
       return load().copy();
     }
 
     if (currentValue.isDone()) {
       var v = currentValue.join();
-      var currentWeakValue = this.weakValue;
-      if (currentWeakValue == null || !currentWeakValue.refersTo(v)) {
+      if (!this.weakValue.refersTo(v)) {
         this.weakValue = new WeakReference<>(v);
       }
     }
@@ -135,13 +129,13 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   @Holding("this.lock")
   @ReleasesNoLocks
   boolean containsWeakValue() {
-    var weakValue = this.weakValue;
-    return weakValue != null && !weakValue.refersTo(null);
+    return !this.weakValue.refersTo(null);
   }
 
   @Pure
   @Holding("this.lock")
-  ElementList getOwner() {
+  @SuppressFBWarnings("EI")
+  public ElementList getOwner() {
     return owner;
   }
 
@@ -212,8 +206,8 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   @ReleasesNoLocks
   public void weakExpire() {
     if (this.value == null) {
-      // No strong reference, so a GC may clear the value -- and we pretend it has.
-      weakValue = null;
+      // No strong reference, so a GC may clear the value -- and so we do.
+      this.weakValue.enqueue();
     }
   }
 
@@ -226,7 +220,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   public void delayExpired(DelayedElement delayedElement) {
     if (delayedElement == currentDelayedElement) {
       value = null;
-      weakValue = null;
+      weakValue.clear();
       unowned.push(this);
     }
   }
@@ -241,9 +235,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
   @Override
   public String toString(@GuardSatisfied Element<K, V> this) {
-    var currentWeakValue = weakValue;
-    var weakValueString = currentWeakValue == null ? "null" : currentWeakValue.get();
-    return "Element{" + "key=" + key + ", value=" + value + ", weakValue=" + weakValueString + ", owner=" + owner
+    return "Element{" + "key=" + key + ", value=" + value + ", weakValue=" + weakValue.get() + ", owner=" + owner
         + ", ownerRefCount=" + ownerRefCount + '}';
   }
 

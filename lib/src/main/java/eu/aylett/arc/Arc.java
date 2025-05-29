@@ -150,6 +150,12 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
         element.lock();
         try {
           element.weakExpire();
+          if (element.getOwner() instanceof UnownedElementList) {
+            elements.computeIfPresent(element.key, (k, v) -> {
+              v.clear();
+              return v; // Keep the entry
+            });
+          }
         } finally {
           element.unlock();
         }
@@ -210,6 +216,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     inner.takeEvictionLock();
     try {
       inner.evict();
+      weakExpire();
       inner.checkSafety();
     } finally {
       inner.releaseEvictionLock();
