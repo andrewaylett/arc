@@ -21,11 +21,12 @@ import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
 import eu.aylett.arc.internal.UnownedElementList;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
+import org.checkerframework.checker.lock.qual.NewObject;
+import org.jetbrains.annotations.Contract;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.SoftReference;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.InstantSource;
 import java.util.concurrent.CompletableFuture;
@@ -67,52 +68,15 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   private final InnerArc inner;
   private final AtomicBoolean needsEviction = new AtomicBoolean(false);
 
-  /**
-   * Constructs a new Arc with the specified capacity, loader function, and the
-   * common ForkJoinPool.
-   *
-   * @param capacity
-   *          the maximum number of elements the cache can hold
-   * @param loader
-   *          the function to load values
-   * @param expiry
-   *          how long after finishing loading a value it should be discarded
-   * @param refresh
-   *          if a value is used more than once in the refresh interval after
-   *          loading, we will refresh it
-   */
-  public Arc(int capacity, Function<K, V> loader, Duration expiry, Duration refresh) {
-    this(capacity, loader, ForkJoinPool.commonPool(), expiry, refresh, Clock.systemUTC());
+  @Contract("_, _ -> new")
+  public static <K extends @NonNull Object, V extends @NonNull Object> @NewObject Arc<K, V> build(Function<K, V> loader,
+      int capacity) {
+    return new ArcBuilder().build(loader, capacity);
   }
 
-  /**
-   * Constructs a new Arc with the specified capacity, loader function, and
-   * ForkJoinPool.
-   *
-   * @param capacity
-   *          the maximum number of elements the cache can hold
-   * @param loader
-   *          the function to load values
-   * @param pool
-   *          the ForkJoinPool that the loader will be submitted to
-   */
-  public Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool) {
-    this(capacity, loader, Duration.ofSeconds(60), Duration.ofSeconds(30), pool);
-  }
-
-  /**
-   * Constructs a new Arc with the specified capacity, loader function, and
-   * ForkJoinPool.
-   *
-   * @param capacity
-   *          the maximum number of elements the cache can hold
-   * @param loader
-   *          the function to load values
-   * @param pool
-   *          the ForkJoinPool that the loader will be submitted to
-   */
-  public Arc(int capacity, Function<? super K, V> loader, Duration expiry, Duration refresh, ForkJoinPool pool) {
-    this(capacity, loader, pool, expiry, refresh, Clock.systemUTC());
+  @Contract(" -> new")
+  public static @NewObject ArcBuilder builder() {
+    return new ArcBuilder();
   }
 
   Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, Duration expiry, Duration refresh,
