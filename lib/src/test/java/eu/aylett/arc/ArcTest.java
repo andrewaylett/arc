@@ -16,7 +16,6 @@
 
 package eu.aylett.arc;
 
-import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -49,13 +48,14 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 
+import static java.time.Duration.ofSeconds;
 import static java.util.Collections.synchronizedList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 class ArcTest {
   @Test
   void test() {
-    var arc = new Arc<>(1, i -> "" + i, ForkJoinPool.commonPool());
+    var arc = Arc.build(i -> "" + i, 1);
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(1), equalTo("1"));
 
@@ -65,10 +65,10 @@ class ArcTest {
   @Test
   void testEviction() {
     var recordedValues = new ArrayList<Integer>();
-    var arc = new Arc<Integer, String>(1, i -> {
+    var arc = Arc.<Integer, String>build(i -> {
       recordedValues.add(i);
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 1);
 
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(2), equalTo("2"));
@@ -86,10 +86,10 @@ class ArcTest {
   @Test
   void testMultipleElements() {
     var recordedValues = new ArrayList<Integer>();
-    var arc = new Arc<Integer, String>(4, i -> {
+    var arc = Arc.build((Integer i) -> {
       recordedValues.add(i);
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 4);
 
     assertThat(arc.get(1), equalTo("1"));
     assertThat(arc.get(2), equalTo("2"));
@@ -103,10 +103,10 @@ class ArcTest {
   @Test
   void testLFUElements() {
     var recordedValues = synchronizedList(new ArrayList<Integer>());
-    var arc = new Arc<Integer, String>(5, i -> {
+    var arc = Arc.build((Integer i) -> {
       recordedValues.add(i);
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 5);
 
     var expectedValues = new ArrayList<Integer>();
     arc.get(1);
@@ -131,10 +131,10 @@ class ArcTest {
   void testParallelLoading() {
     var recordedValues = new ConcurrentLinkedDeque<Integer>();
     var pool = ForkJoinPool.commonPool();
-    var arc = new Arc<Integer, String>(200, i -> {
+    var arc = Arc.build((Integer i) -> {
       recordedValues.add(i);
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 200);
 
     var toJoin = new ArrayList<ForkJoinTask<String>>();
     for (var i = 1; i <= 5000; i++) {
@@ -152,10 +152,11 @@ class ArcTest {
     var recordedValues = ConcurrentHashMap.<Integer>newKeySet();
     var pool = ForkJoinPool.commonPool();
     var clock = new MockInstantSource();
-    var arc = new Arc<Integer, String>(50, i -> {
-      recordedValues.add(i);
-      return i.toString();
-    }, pool, Duration.ofMinutes(1), Duration.ofSeconds(30), clock);
+    var arc = Arc.builder().withExpiry(Duration.ofMinutes(1)).withRefresh(ofSeconds(30)).withClock(clock)
+        .build((Integer i) -> {
+          recordedValues.add(i);
+          return i.toString();
+        }, 50);
     var random = new Random(0);
     var seen = new HashSet<Integer>();
 
@@ -184,7 +185,7 @@ class ArcTest {
     var inOneSem = new Semaphore(0);
     var releaseOneSem = new Semaphore(0);
     var pool = ForkJoinPool.commonPool();
-    var arc = new Arc<Integer, String>(10, s -> {
+    var arc = Arc.build((Integer s) -> {
       try {
         return switch (s) {
           case 1 -> {
@@ -201,7 +202,7 @@ class ArcTest {
       } catch (InterruptedException e) {
         throw new RuntimeException(e);
       }
-    }, pool);
+    }, 10);
 
     var t1 = pool.submit(() -> arc.get(1));
     inOneSem.acquire();
@@ -220,7 +221,7 @@ class ArcTest {
     var zeroTimestamps = synchronizedList(new ArrayList<Instant>());
     var minusOneTimestamps = synchronizedList(new ArrayList<Instant>());
 
-    var arc = new Arc<Integer, String>(1000, i -> {
+    var arc = Arc.builder().withExpiry(ofSeconds(60)).withRefresh(ofSeconds(30)).withClock(clock).build((Integer i) -> {
       recordedValues.add(i);
       if (i == 0) {
         zeroTimestamps.add(clock.instant());
@@ -229,7 +230,7 @@ class ArcTest {
         minusOneTimestamps.add(clock.instant());
       }
       return "" + i;
-    }, ForkJoinPool.commonPool(), Duration.ofSeconds(60), Duration.ofSeconds(30), clock);
+    }, 1000);
 
     for (var i = 0; i < testCount; i++) {
       arc.get(i);
@@ -292,7 +293,7 @@ class ArcTest {
 
   @Test
   void testNullKeyHandling() {
-    var arc = new Arc<@NonNull Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    var arc = Arc.build(Object::toString, 10);
     @SuppressWarnings("DataFlowIssue")
     var e = assertThrowsExactly(NullPointerException.class, () -> arc.get(null));
     assertThat(e.getMessage(), equalTo("key cannot be null"));
@@ -300,7 +301,7 @@ class ArcTest {
 
   @Test
   void testLargeCapacity() {
-    var arc = new Arc<Integer, String>(100_000, Object::toString, ForkJoinPool.commonPool());
+    var arc = Arc.build(Object::toString, 100_000);
     for (var i = 0; i < 100_000; i++) {
       assertThat(arc.get(i), equalTo(String.valueOf(i)));
     }
@@ -308,7 +309,7 @@ class ArcTest {
 
   @Test
   void testWeakExpireWithNoGC() {
-    var arc = new Arc<Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    var arc = Arc.build(Object::toString, 10);
     arc.get(1);
     arc.get(2);
     arc.weakExpire();
@@ -318,7 +319,7 @@ class ArcTest {
 
   @Test
   void testWeakExpireWithGC() {
-    var arc = new Arc<Integer, String>(10, Object::toString, ForkJoinPool.commonPool());
+    var arc = Arc.build(Object::toString, 10);
     arc.get(1);
     arc.get(2);
     System.gc(); // Suggest garbage collection
@@ -331,12 +332,12 @@ class ArcTest {
   void testLoaderExceptionHandling() {
     var loaderFailed = new UnsupportedOperationException("Loader failed");
 
-    var arc = new Arc<Integer, String>(10, i -> {
+    var arc = Arc.build((Integer i) -> {
       if (i == 1) {
         throw loaderFailed;
       }
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 10);
 
     var ex = assertThrowsExactly(CompletionException.class, () -> arc.get(1));
     assertThat(ex.getCause(), is(loaderFailed));
@@ -348,12 +349,12 @@ class ArcTest {
   void testLoaderRetriesAfterException() {
     var shouldThrow = new AtomicBoolean(true);
 
-    var arc = new Arc<Integer, String>(10, i -> {
+    var arc = Arc.build((Integer i) -> {
       if (i == 1 && shouldThrow.getAndSet(false)) {
         throw new UnsupportedOperationException("Loader failed");
       }
       return i.toString();
-    }, ForkJoinPool.commonPool());
+    }, 10);
 
     var ex = assertThrowsExactly(CompletionException.class, () -> arc.get(1));
     var cause = ex.getCause();
@@ -366,14 +367,14 @@ class ArcTest {
   @Test
   void testConcurrentAccessWithSameKey() {
     var pool = ForkJoinPool.commonPool();
-    var arc = new Arc<Integer, String>(10, i -> {
+    var arc = Arc.build((Integer i) -> {
       try {
         Thread.sleep(100); // Simulate delay in loading
       } catch (InterruptedException e) {
         throw new RuntimeException(e);
       }
       return i.toString();
-    }, pool);
+    }, 10);
 
     var tasks = new ArrayList<ForkJoinTask<String>>();
     for (var i = 0; i < 10; i++) {
@@ -386,7 +387,7 @@ class ArcTest {
 
   @Test
   void testEvictionWithHighTurnover() {
-    var arc = new Arc<Integer, String>(5, Object::toString, ForkJoinPool.commonPool());
+    var arc = Arc.build(Object::toString, 5);
     for (var i = 0; i < 20; i++) {
       arc.get(i);
     }
@@ -398,7 +399,7 @@ class ArcTest {
   @Test
   void testCustomForkJoinPool() {
     var customPool = new ForkJoinPool(2);
-    var arc = new Arc<Integer, String>(10, Object::toString, customPool);
+    var arc = Arc.builder().withPool(customPool).build(Object::toString, 10);
 
     var tasks = new ArrayList<ForkJoinTask<String>>();
     for (var i = 0; i < 10; i++) {
@@ -414,7 +415,7 @@ class ArcTest {
 
   @Test
   void testLoaderWithComplexValues() {
-    var arc = new Arc<Integer, List<Integer>>(10, i -> List.of(i, i * 2, i * 3), ForkJoinPool.commonPool());
+    var arc = Arc.<Integer, List<Integer>>build(i -> List.of(i, i * 2, i * 3), 10);
     assertThat(arc.get(2), equalTo(List.of(2, 4, 6)));
     assertThat(arc.get(3), equalTo(List.of(3, 6, 9)));
   }
