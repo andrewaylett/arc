@@ -16,8 +16,14 @@
 
 package eu.aylett.arc;
 
+import com.google.common.base.Verify;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import eu.aylett.arc.internal.DelayManager;
+import eu.aylett.arc.internal.ExpireAndRefreshDelayManager;
+import eu.aylett.arc.internal.ExpiringDelayManager;
+import eu.aylett.arc.internal.NoOpDelayManager;
 import org.checkerframework.checker.lock.qual.NewObject;
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.jetbrains.annotations.Contract;
 import org.jspecify.annotations.NonNull;
 
@@ -32,8 +38,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 public class ArcBuilder {
 
-  private Duration expiry = Duration.ofSeconds(60);
-  private Duration refresh = Duration.ofSeconds(30);
+  private @MonotonicNonNull Duration expiry;
+  private @MonotonicNonNull Duration refresh;
   private ForkJoinPool pool = ForkJoinPool.commonPool();
   private InstantSource clock = Clock.systemUTC();
 
@@ -41,12 +47,14 @@ public class ArcBuilder {
   }
 
   public ArcBuilder withExpiry(Duration expiry) {
-    this.expiry = checkNotNull(expiry);
+    checkArgument(expiry.isPositive(), "Expiry must be positive");
+    this.expiry = expiry;
     return this;
   }
 
   public ArcBuilder withRefresh(Duration refresh) {
-    this.refresh = checkNotNull(refresh);
+    checkArgument(refresh.isPositive(), "Refresh must be positive");
+    this.refresh = refresh;
     return this;
   }
 
@@ -68,6 +76,18 @@ public class ArcBuilder {
       int capacity) {
     checkNotNull(loader, "Loader function must be provided");
     checkArgument(capacity > 0, "Capacity must be greater than zero");
-    return new Arc<>(capacity, loader, pool, expiry, refresh, clock);
+
+    Verify.verify(expiry != null || refresh == null, "Cannot refresh without expiry");
+
+    DelayManager delayManager;
+    if (expiry != null && refresh != null) {
+      checkArgument(expiry.compareTo(refresh) >= 0, "Expiry must be greater than or equal to refresh");
+      delayManager = new ExpireAndRefreshDelayManager(expiry, refresh, clock);
+    } else if (expiry != null) {
+      delayManager = new ExpiringDelayManager(expiry, clock);
+    } else {
+      delayManager = new NoOpDelayManager(clock);
+    }
+    return new Arc<>(capacity, loader, pool, delayManager);
   }
 }

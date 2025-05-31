@@ -16,5 +16,5 @@
 
 package eu.aylett.arc.internal;
 
-public abstract class DelayedElement {
+public class NoOpDelayedElement extends DelayedElement {
 }

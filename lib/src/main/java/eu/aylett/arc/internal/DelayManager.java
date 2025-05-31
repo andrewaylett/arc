@@ -19,44 +19,20 @@ package eu.aylett.arc.internal;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 
-import java.time.Duration;
 import java.time.InstantSource;
-import java.util.concurrent.DelayQueue;
 import java.util.concurrent.TimeUnit;
 
-public final class DelayManager {
-  private final DelayQueue<DelayedElement> queue;
-  private final DelayQueue<DelayedElement> refreshQueue;
-  private final Duration expiry;
-  private final Duration refresh;
-  private final InstantSource timeSource;
+public abstract class DelayManager {
+  protected final InstantSource timeSource;
 
-  public DelayManager(Duration expiry, Duration refresh, InstantSource timeSource) {
-    this.queue = new DelayQueue<>();
-    this.refreshQueue = new DelayQueue<>();
-    this.expiry = expiry;
-    this.refresh = refresh;
+  public DelayManager(InstantSource timeSource) {
     this.timeSource = timeSource;
   }
 
-  public DelayedElement add(Element<?, ?> element) {
-    var epochMilli = timeSource.instant().toEpochMilli();
-    var delayedElement = new DelayedElement(element, this::getDelay, epochMilli + expiry.toMillis());
-    queue.add(delayedElement);
-    refreshQueue.add(new DelayedElement(element, this::getDelay, epochMilli + refresh.toMillis()));
-    return delayedElement;
-  }
+  public abstract DelayedElement add(Element<?, ?> element);
 
   @MayReleaseLocks
-  public void poll() {
-    DelayedElement element;
-    while ((element = refreshQueue.poll()) != null) {
-      element.refresh();
-    }
-    while ((element = queue.poll()) != null) {
-      element.expireFromDelay();
-    }
-  }
+  public abstract void poll();
 
   @SideEffectFree
   public long getDelay(long expiryTime, TimeUnit unit) {
