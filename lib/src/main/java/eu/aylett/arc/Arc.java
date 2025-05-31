@@ -19,6 +19,7 @@ package eu.aylett.arc;
 import eu.aylett.arc.internal.DelayManager;
 import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
+import eu.aylett.arc.internal.LockOrderGuard;
 import eu.aylett.arc.internal.UnownedElementList;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.NewObject;
@@ -65,6 +66,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
   private final UnownedElementList unowned;
   private final InnerArc inner;
   private final AtomicBoolean needsEviction = new AtomicBoolean(false);
+  private final LockOrderGuard lockOrderGuard;
 
   @Contract("_, _ -> new")
   public static <K extends @NonNull Object, V extends @NonNull Object> @NewObject Arc<K, V> build(Function<K, V> loader,
@@ -83,7 +85,8 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     this.loader = checkNotNull(loader);
     this.pool = checkNotNull(pool);
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc(Math.max(capacity / 2, 1), delayManager);
+    lockOrderGuard = new LockOrderGuard();
+    inner = new InnerArc(lockOrderGuard, Math.max(capacity / 2, 1), delayManager);
     unowned = inner.unowned;
   }
 
@@ -99,7 +102,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     elements.values().forEach(elementSoftReference -> {
       var element = elementSoftReference.get();
       if (element != null) {
-        element.lock();
+        var release = element.lock();
         try {
           element.weakExpire();
           if (element.getOwner() instanceof UnownedElementList) {
@@ -109,7 +112,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
             });
           }
         } finally {
-          element.unlock();
+          element.unlock(release);
         }
       }
     });
@@ -128,7 +131,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     checkNotNull(key, "key cannot be null");
     while (true) {
       var ref = elements.computeIfAbsent(key, k -> {
-        var element = new Element<>(k, loader, (l) -> CompletableFuture.supplyAsync(l, pool), unowned);
+        var element = new Element<>(k, loader, (l) -> CompletableFuture.supplyAsync(l, pool), unowned, lockOrderGuard);
         return new SoftReference<>(element);
       });
       var e = ref.get();
@@ -147,7 +150,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
             });
         continue;
       }
-      e.lock();
+      var release = e.lock();
       CompletableFuture<V> completableFuture;
       try {
         completableFuture = e.get();
@@ -156,7 +159,7 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
         // starts.
         needsEviction.setRelease(true);
       } finally {
-        e.unlock();
+        e.unlock(release);
       }
       pool.submit(this::runEviction);
       return completableFuture.join();

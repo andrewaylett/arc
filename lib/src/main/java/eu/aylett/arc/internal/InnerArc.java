@@ -36,6 +36,7 @@ import static com.google.common.base.Verify.verify;
 public class InnerArc {
   // This lock must not be taken while holding a lock on an Element.
   private final Lock evictionLock = new ReentrantLock();
+  private final LockOrderGuard lockOrderGuard;
 
   /**
    * The list of elements seen once, managed as a Least Recently Used (LRU) cache.
@@ -75,7 +76,8 @@ public class InnerArc {
    *          the maximum number of elements the cache can hold
    */
   @SuppressFBWarnings("EI2")
-  public InnerArc(int capacity, DelayManager delayManager) {
+  public InnerArc(LockOrderGuard lockOrderGuard, int capacity, DelayManager delayManager) {
+    this.lockOrderGuard = lockOrderGuard;
     initialCapacity = capacity;
     this.delayManager = delayManager;
     unowned = new UnownedElementList(this);
@@ -158,17 +160,20 @@ public class InnerArc {
   @EnsuresLockHeldIf(expression = "this.evictionLock", result = true)
   @ReleasesNoLocks
   public boolean tryEvictionLock() {
+    lockOrderGuard.assertNoElementLockHeld();
     return evictionLock.tryLock();
   }
 
   @EnsuresLockHeld("this.evictionLock")
   @ReleasesNoLocks
   public void takeEvictionLock() {
+    lockOrderGuard.assertNoElementLockHeld();
     evictionLock.lock();
   }
 
   @MayReleaseLocks
   public void releaseEvictionLock() {
     evictionLock.unlock();
+    lockOrderGuard.assertNoElementLockHeld();
   }
 }

@@ -60,7 +60,7 @@ abstract class ExpiredElementList extends ElementList {
     var seen = new HashMap<Element<?, ?>, Integer>();
     var initialSize = this.size.get();
     for (var element : queue) {
-      element.lock();
+      var release = element.lock();
       try {
         var owner = element.getOwner();
         if (owner != this) {
@@ -69,7 +69,7 @@ abstract class ExpiredElementList extends ElementList {
         seen.compute(element, (k, v) -> v == null ? 1 : v + 1);
         verify(!element.containsValue(), "Element in expired list has a value: %s", element);
       } finally {
-        element.unlock();
+        element.unlock(release);
       }
     }
     verify(seen.size() == initialSize, "Size mismatch: found %s items != expected %s", seen.size(), this.size);
@@ -112,12 +112,12 @@ abstract class ExpiredElementList extends ElementList {
       }
 
       var victim = queue.remove();
-      victim.lock();
+      var release = victim.lock();
       try {
         victim.removeRef(this);
         size.incrementAndGet();
       } finally {
-        victim.unlock();
+        victim.unlock(release);
       }
     }
   }
