@@ -59,6 +59,7 @@ java {
 testing {
   suites {
     // Configure the built-in test suite
+    @Suppress("unused")
     val test by
         getting(JvmTestSuite::class) {
           // Use JUnit Jupiter test framework
@@ -81,6 +82,7 @@ configure<CheckerFrameworkExtension> {
           "org.checkerframework.common.initializedfields.InitializedFieldsChecker",
           "org.checkerframework.checker.lock.LockChecker",
       )
+  excludeTests = true
 }
 
 spotless {

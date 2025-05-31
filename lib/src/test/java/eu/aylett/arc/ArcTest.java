@@ -16,13 +16,7 @@
 
 package eu.aylett.arc;
 
-import org.checkerframework.checker.initialization.qual.Initialized;
-import org.checkerframework.checker.lock.qual.GuardedBy;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.PolyNull;
-import org.hamcrest.Matcher;
-import org.hamcrest.MatcherAssert;
-import org.hamcrest.Matchers;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -46,7 +40,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
@@ -56,17 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 import static java.util.Collections.synchronizedList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-@SuppressWarnings({"argument", "type.argument", "method.guarantee.violated", "type.arguments.not.inferred", "argument",
-    "methodref.receiver", "dereference.of.nullable"})
 class ArcTest {
-  public static <T> org.hamcrest.Matcher<@GuardedBy @PolyNull @Initialized T> equalTo(@GuardedBy @PolyNull T operand) {
-    return org.hamcrest.core.IsEqual.equalTo(operand);
-  }
-
-  public static <T> void assertThat(@GuardedBy @PolyNull T actual, Matcher<? super @GuardedBy @PolyNull T> matcher) {
-    MatcherAssert.assertThat("", actual, matcher);
-  }
-
   @Test
   void test() {
     var arc = new Arc<>(1, i -> "" + i, ForkJoinPool.commonPool());
@@ -92,14 +78,14 @@ class ArcTest {
     assertThat(arc.get(1), equalTo("1")); // This should reload "1" as it was evicted
 
     // Check that the loader function was called with the expected values
-    assertThat(recordedValues, equalTo(List.<@GuardedBy Integer>of(1, 2, 1)));
+    assertThat(recordedValues, equalTo(List.of(1, 2, 1)));
 
     arc.checkSafety();
   }
 
   @Test
   void testMultipleElements() {
-    var recordedValues = new ArrayList<@NonNull Integer>();
+    var recordedValues = new ArrayList<Integer>();
     var arc = new Arc<Integer, String>(4, i -> {
       recordedValues.add(i);
       return i.toString();
@@ -111,18 +97,18 @@ class ArcTest {
     assertThat(arc.get(2), equalTo("2"));
 
     // Check that the loader function was called with the expected values
-    assertThat(recordedValues, equalTo(List.<@GuardedBy Integer>of(1, 2)));
+    assertThat(recordedValues, equalTo(List.of(1, 2)));
   }
 
   @Test
   void testLFUElements() {
-    var recordedValues = synchronizedList(new ArrayList<@NonNull Integer>());
+    var recordedValues = synchronizedList(new ArrayList<Integer>());
     var arc = new Arc<Integer, String>(5, i -> {
       recordedValues.add(i);
       return i.toString();
     }, ForkJoinPool.commonPool());
 
-    var expectedValues = new ArrayList<@NonNull Integer>();
+    var expectedValues = new ArrayList<Integer>();
     arc.get(1);
 
     for (var i = 1; i <= 50; i++) {
@@ -130,7 +116,7 @@ class ArcTest {
       expectedValues.add(i);
     }
 
-    // Should not have been eviced, so we won't record it again.
+    // Should not have been evicted, so we won't record it again.
     arc.get(1);
 
     synchronized (recordedValues) {
@@ -254,7 +240,7 @@ class ArcTest {
         arc.get(-1);
       }
       clock.value.addAndGet(1);
-      if (i % 1000 == 0) {
+      if (i % 100 == 0) {
         arc.checkSafety();
       }
     }
@@ -371,14 +357,14 @@ class ArcTest {
 
     var ex = assertThrowsExactly(CompletionException.class, () -> arc.get(1));
     var cause = ex.getCause();
-    assertThat(cause.getMessage(), Matchers.equalTo("Loader failed"));
+    assertThat(cause.getMessage(), equalTo("Loader failed"));
 
     assertThat(arc.get(2), equalTo("2"));
     assertThat(arc.get(1), equalTo("1"));
   }
 
   @Test
-  void testConcurrentAccessWithSameKey() throws InterruptedException {
+  void testConcurrentAccessWithSameKey() {
     var pool = ForkJoinPool.commonPool();
     var arc = new Arc<Integer, String>(10, i -> {
       try {
