@@ -23,13 +23,14 @@ import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.dataflow.qual.Pure;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 
 import java.util.HashMap;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.google.common.base.Verify.verify;
 
 /**
  * The ElementList class represents a queue used to manage elements in the
@@ -79,31 +80,18 @@ public class LRUElementList extends ElementList {
           continue;
         }
         seen.compute(element, (k, v) -> v == null ? 1 : v + 1);
-        if (!element.containsValue() && element.containsWeakValue()) {
-          throw new IllegalStateException("Element in LRU list has only weak value: " + element);
-        }
+        verify(element.containsValue() || !element.containsWeakValue(), "Element in LRU list has only weak value: %s",
+            element);
       } finally {
         element.unlock();
       }
     }
-    if (seen.size() != startSize) {
-      throw new IllegalStateException("Size mismatch: found " + seen.size() + " items != expected " + startSize);
-    }
+    verify(seen.size() == startSize, "Size mismatch: found %s items != expected %s", seen.size(), startSize);
     seen.forEach((k, v) -> {
-      if (k.refCount() > v) {
-        throw new IllegalStateException("Element " + k + " has ref count of " + k.refCount() + " > expected " + v);
-      }
+      verify(k.refCount() <= v, "Element %s has ref count of %s > expected %s", k, k.refCount(), v);
     });
 
-    if (size.get() > capacity.get()) {
-      throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
-    }
-  }
-
-  @Pure
-  @Override
-  boolean isForExpiredElements() {
-    return false;
+    verify(size.get() <= capacity.get(), "Size of %s exceeds capacity of %s: %s", size, capacity, this);
   }
 
   /**

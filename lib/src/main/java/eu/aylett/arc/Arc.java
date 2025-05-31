@@ -21,8 +21,8 @@ import eu.aylett.arc.internal.Element;
 import eu.aylett.arc.internal.InnerArc;
 import eu.aylett.arc.internal.UnownedElementList;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.SoftReference;
 import java.time.Clock;
@@ -35,7 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import static eu.aylett.arc.internal.Invariants.checkNotNull;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * The Arc class provides a cache mechanism with a specified capacity. It uses a
@@ -116,18 +117,11 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
 
   Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, Duration expiry, Duration refresh,
       InstantSource clock) {
-    if (capacity < 1) {
-      throw new IllegalArgumentException("Capacity must be at least 1");
-    }
-    if (expiry.compareTo(refresh) < 0) {
-      throw new IllegalArgumentException("Expiry must be greater than refresh");
-    }
-    if (!expiry.isPositive()) {
-      throw new IllegalArgumentException("Expiry must be positive");
-    }
-    if (!refresh.isPositive()) {
-      throw new IllegalArgumentException("Refresh must be positive");
-    }
+    checkArgument(capacity > 0, "Capacity must be at least 1");
+    checkArgument(expiry.compareTo(refresh) >= 0, "Expiry must be greater than refresh");
+    checkArgument(expiry.isPositive(), "Expiry must be positive");
+    checkArgument(refresh.isPositive(), "Refresh must be positive");
+
     this.loader = checkNotNull(loader);
     this.pool = checkNotNull(pool);
     elements = new ConcurrentHashMap<>();
@@ -223,6 +217,19 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     }
   }
 
+  /**
+   * An eviction cycle.
+   * <p>
+   * This can be run concurrently with gets, but we only want to run one eviction
+   * at a time.
+   * </p>
+   * <p>
+   * We try to make sure that we will always run an eviction task after each get,
+   * but we won't make them wait around if there's already an eviction task
+   * running -- the current task will loop while holding the lock if we need to
+   * run eviction again.
+   * </p>
+   */
   @MayReleaseLocks
   private void runEviction() {
     // If needsEviction is set above,

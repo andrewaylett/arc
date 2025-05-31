@@ -23,7 +23,6 @@ import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.dataflow.qual.Pure;
 
 public abstract class ElementList {
   public final ListId name;
@@ -38,9 +37,6 @@ public abstract class ElementList {
 
   @MayReleaseLocks
   abstract void checkSafety();
-
-  @Pure
-  abstract boolean isForExpiredElements();
 
   @ReleasesNoLocks
   @Holding("#1.lock")

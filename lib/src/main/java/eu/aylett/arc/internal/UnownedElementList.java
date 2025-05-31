@@ -27,11 +27,6 @@ public class UnownedElementList extends ElementList {
   }
 
   @Override
-  boolean isForExpiredElements() {
-    return true;
-  }
-
-  @Override
   @ReleasesNoLocks
   @Holding("#1.lock")
   void push(Element<?, ?> newElement) {
@@ -60,6 +55,6 @@ public class UnownedElementList extends ElementList {
   @Override
   @MayReleaseLocks
   public void checkSafety() {
-    inner.checkSafety();
+    // No safety checks needed for unowned elements.
   }
 }

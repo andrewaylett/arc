@@ -19,6 +19,7 @@ open module eu.aylett.arc {
   requires org.checkerframework.checker.qual;
   requires com.github.spotbugs.annotations;
   requires org.jetbrains.annotations;
+  requires com.google.common;
 
   exports eu.aylett.arc;
 }

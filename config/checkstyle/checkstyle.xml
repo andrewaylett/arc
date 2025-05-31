@@ -60,6 +60,17 @@ Authors: Max Vetrenko, Mauryan Kansara, Ruslan Diachenko, Roman Ivanov.
             <property name="allowNonPrintableEscapes" value="true"/>
         </module>
         <module name="AvoidStarImport"/>
+        <module name="IllegalImport">
+            <property name="illegalClasses"
+                value="
+                    org.checkerframework.checker.nullness.qual.Nullable,
+                    org.checkerframework.checker.nullness.qual.NonNull,
+                    org.jetbrains.annotations.Nullable,
+                    org.jetbrains.annotations.NotNull,
+                    org.jetbrains.annotations.NotNullByDefault,
+"/>
+            <property name="illegalPkgs" value="sun, javax"/>
+        </module>
         <module name="OneTopLevelClass"/>
         <module name="NoLineWrap">
             <property name="tokens" value="PACKAGE_DEF, IMPORT, STATIC_IMPORT"/>
