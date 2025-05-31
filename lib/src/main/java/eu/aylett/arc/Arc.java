@@ -27,8 +27,6 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.SoftReference;
-import java.time.Duration;
-import java.time.InstantSource;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
@@ -79,17 +77,13 @@ public final class Arc<K extends @NonNull Object, V extends @NonNull Object> {
     return new ArcBuilder();
   }
 
-  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, Duration expiry, Duration refresh,
-      InstantSource clock) {
+  Arc(int capacity, Function<? super K, V> loader, ForkJoinPool pool, DelayManager delayManager) {
     checkArgument(capacity > 0, "Capacity must be at least 1");
-    checkArgument(expiry.compareTo(refresh) >= 0, "Expiry must be greater than refresh");
-    checkArgument(expiry.isPositive(), "Expiry must be positive");
-    checkArgument(refresh.isPositive(), "Refresh must be positive");
 
     this.loader = checkNotNull(loader);
     this.pool = checkNotNull(pool);
     elements = new ConcurrentHashMap<>();
-    inner = new InnerArc(Math.max(capacity / 2, 1), new DelayManager(expiry, refresh, clock));
+    inner = new InnerArc(Math.max(capacity / 2, 1), delayManager);
     unowned = inner.unowned;
   }
 

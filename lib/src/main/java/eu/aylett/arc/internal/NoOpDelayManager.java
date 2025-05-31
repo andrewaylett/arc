@@ -16,5 +16,23 @@
 
 package eu.aylett.arc.internal;
 
-public abstract class DelayedElement {
+import org.checkerframework.checker.lock.qual.MayReleaseLocks;
+
+import java.time.InstantSource;
+
+public final class NoOpDelayManager extends DelayManager {
+
+  public NoOpDelayManager(InstantSource timeSource) {
+    super(timeSource);
+  }
+
+  @Override
+  public DelayedElement add(Element<?, ?> element) {
+    return new NoOpDelayedElement();
+  }
+
+  @MayReleaseLocks
+  @Override
+  public void poll() {
+  }
 }
