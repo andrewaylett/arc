@@ -54,6 +54,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
   private final Function<Supplier<V>, CompletableFuture<V>> pool;
   private final UnownedElementList unowned;
+  private final LockOrderGuard lockOrderGuard;
 
   /**
    * A weak reference to the value associated with this element, if it's been
@@ -70,22 +71,34 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
   @SuppressFBWarnings("EI2")
   public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool,
-      UnownedElementList owner) {
+      UnownedElementList owner, LockOrderGuard lockOrderGuard) {
     this.key = key;
     this.loader = loader;
     this.pool = pool;
     this.owner = owner;
     this.unowned = owner;
+    this.lockOrderGuard = lockOrderGuard;
   }
 
   @EnsuresLockHeld("this.lock")
-  public void lock() {
+  @MayReleaseLocks
+  public LockOrderGuard.Release lock() {
     lock.lock();
+    try {
+      return lockOrderGuard.markThreadHoldingLock(this);
+    } catch (Throwable t) {
+      lock.unlock();
+      throw t;
+    }
   }
 
   @MayReleaseLocks
-  public void unlock() {
-    lock.unlock();
+  public void unlock(LockOrderGuard.Release release) {
+    try {
+      release.release();
+    } finally {
+      lock.unlock();
+    }
   }
 
   /**
@@ -141,7 +154,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   @ReleasesNoLocks
   CompletableFuture<V> load() {
     var value = pool.apply(() -> loader.apply(key));
-    value.thenRun(this::lockAndResetDelay);
+    value.thenRunAsync(this::lockAndResetDelay);
     this.value = value;
     return value;
   }
@@ -242,11 +255,11 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
    */
   @MayReleaseLocks
   private void lockAndResetDelay() {
-    this.lock();
+    var release = this.lock();
     try {
       resetDelay();
     } finally {
-      this.unlock();
+      this.unlock(release);
     }
   }
 }

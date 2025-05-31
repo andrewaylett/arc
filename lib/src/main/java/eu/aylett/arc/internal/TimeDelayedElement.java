@@ -56,21 +56,21 @@ public final class TimeDelayedElement extends DelayedElement implements Delayed 
 
   @MayReleaseLocks
   public void expireFromDelay() {
-    element.lock();
+    var release = element.lock();
     try {
       element.delayExpired(this);
     } finally {
-      element.unlock();
+      element.unlock(release);
     }
   }
 
   @MayReleaseLocks
   public void refresh() {
-    element.lock();
+    var release = element.lock();
     try {
       element.reload();
     } finally {
-      element.unlock();
+      element.unlock(release);
     }
   }
 

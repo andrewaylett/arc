@@ -73,7 +73,7 @@ public class LRUElementList extends ElementList {
     var seen = new HashMap<Element<?, ?>, Integer>();
     var startSize = this.size.get();
     for (var element : queue) {
-      element.lock();
+      var release = element.lock();
       try {
         var owner = element.getOwner();
         if (owner != this) {
@@ -83,7 +83,7 @@ public class LRUElementList extends ElementList {
         verify(element.containsValue() || !element.containsWeakValue(), "Element in LRU list has only weak value: %s",
             element);
       } finally {
-        element.unlock();
+        element.unlock(release);
       }
     }
     verify(seen.size() == startSize, "Size mismatch: found %s items != expected %s", seen.size(), startSize);
@@ -152,7 +152,7 @@ public class LRUElementList extends ElementList {
         return;
       }
       var victim = queue.remove();
-      victim.lock();
+      var release = victim.lock();
       try {
         var expired = victim.removeRef(this);
         if (expired) {
@@ -160,7 +160,7 @@ public class LRUElementList extends ElementList {
         }
         this.size.incrementAndGet();
       } finally {
-        victim.unlock();
+        victim.unlock(release);
       }
     } while (true);
   }
