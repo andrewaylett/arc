@@ -22,8 +22,8 @@ import org.checkerframework.checker.lock.qual.GuardSatisfied;
 import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.dataflow.qual.Pure;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
@@ -32,6 +32,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Supplier;
+
+import static com.google.common.base.Verify.verify;
 
 /**
  * The Element class represents an element in the cache. It manages the value
@@ -95,12 +97,8 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   public CompletableFuture<V> get() {
     owner.processElement(this);
     var currentOwner = this.owner;
-    if (currentOwner == unowned) {
-      throw new IllegalStateException("Called get on an element with no owner");
-    }
-    if (currentOwner.isForExpiredElements()) {
-      throw new IllegalStateException("Called get on an object in an expired list");
-    }
+    verify(currentOwner != unowned, "Called get on an element with no owner");
+    verify(currentOwner instanceof LRUElementList, "Called get on an object in an expired list");
 
     var currentValue = this.value;
     if (currentValue == null || currentValue.isCompletedExceptionally()) {

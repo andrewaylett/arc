@@ -27,6 +27,8 @@ import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static com.google.common.base.Verify.verify;
+
 /**
  * The InnerArc class manages the internal cache mechanism for the Arc class. It
  * maintains multiple lists to track elements based on their usage patterns.
@@ -107,15 +109,14 @@ public class InnerArc {
 
   @MayReleaseLocks
   public void checkSafety() {
-    if (seenMultiLRU.getCapacity() + seenOnceLRU.getCapacity() != initialCapacity * 2) {
-      throw new IllegalStateException("Size mismatch: " + seenMultiLRU.getCapacity() + " + " + seenOnceLRU.getCapacity()
-          + " != " + initialCapacity * 2);
-    }
+    verify(seenMultiLRU.getCapacity() + seenOnceLRU.getCapacity() == initialCapacity * 2,
+        "Size mismatch: %s + %s != %s", seenMultiLRU.getCapacity(), seenOnceLRU.getCapacity(), initialCapacity * 2);
 
     seenOnceLRU.checkSafety();
     seenMultiLRU.checkSafety();
     seenOnceExpiring.checkSafety();
     seenMultiExpiring.checkSafety();
+    unowned.checkSafety();
   }
 
   @Holding("#1.lock")
@@ -150,6 +151,7 @@ public class InnerArc {
     seenOnceLRU.evict();
     seenMultiExpiring.evict();
     seenOnceExpiring.evict();
+    unowned.evict();
     delayManager.poll();
   }
 

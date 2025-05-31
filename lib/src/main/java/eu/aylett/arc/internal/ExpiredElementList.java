@@ -18,18 +18,19 @@ package eu.aylett.arc.internal;
 
 import org.checkerframework.checker.initialization.qual.UnderInitialization;
 import org.checkerframework.checker.lock.qual.GuardSatisfied;
-import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.LockingFree;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
-import org.checkerframework.dataflow.qual.Pure;
 import org.checkerframework.dataflow.qual.SideEffectFree;
 
 import java.util.HashMap;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Verify.verify;
 
 /**
  * The ElementList class represents a queue used to manage elements in the
@@ -44,7 +45,7 @@ abstract class ExpiredElementList extends ElementList {
   private final Queue<Element<?, ?>> queue;
 
   /** The current number of elements in the list. */
-  private AtomicInteger size = new AtomicInteger(0);
+  private final AtomicInteger size = new AtomicInteger(0);
 
   @LockingFree
   ExpiredElementList(ListId name, int capacity, @UnderInitialization InnerArc inner) {
@@ -55,7 +56,7 @@ abstract class ExpiredElementList extends ElementList {
 
   @MayReleaseLocks
   @Override
-  void checkSafety(@GuardedBy ExpiredElementList this) {
+  void checkSafety() {
     var seen = new HashMap<Element<?, ?>, Integer>();
     var initialSize = this.size.get();
     for (var element : queue) {
@@ -66,31 +67,17 @@ abstract class ExpiredElementList extends ElementList {
           continue;
         }
         seen.compute(element, (k, v) -> v == null ? 1 : v + 1);
-        if (element.containsValue()) {
-          throw new IllegalStateException("Element in expired list has a value: " + element);
-        }
+        verify(!element.containsValue(), "Element in expired list has a value: %s", element);
       } finally {
         element.unlock();
       }
     }
-    if (seen.size() != initialSize) {
-      throw new IllegalStateException("Size mismatch: found " + seen.size() + " items != expected " + this.size);
-    }
+    verify(seen.size() == initialSize, "Size mismatch: found %s items != expected %s", seen.size(), this.size);
     seen.forEach((k, v) -> {
-      if (k.refCount() > v) {
-        throw new IllegalStateException("Element " + k + " has ref count of " + k.refCount() + " > expected " + v);
-      }
+      verify(k.refCount() <= v, "Element %s has ref count of %s > expected %s", k, k.refCount(), v);
     });
 
-    if (initialSize > capacity) {
-      throw new IllegalStateException("Size of " + size + " exceeds capacity of " + capacity + ": " + this);
-    }
-  }
-
-  @Pure
-  @Override
-  boolean isForExpiredElements() {
-    return true;
+    verify(initialSize <= capacity, "Size of %s exceeds capacity of %s: %s", size, capacity, this);
   }
 
   /**
@@ -104,9 +91,8 @@ abstract class ExpiredElementList extends ElementList {
   @Holding("#1.lock")
   @Override
   void push(Element<?, ?> newElement) {
-    if (newElement.containsValue()) {
-      throw new IllegalStateException("Attempted to add an element with a value to an expired list: " + newElement);
-    }
+    checkArgument(!newElement.containsValue(), "Attempted to add an element with a value to an expired list: %s",
+        newElement);
     var newlyAdded = newElement.addRef(this);
     queue.add(newElement);
     if (newlyAdded) {

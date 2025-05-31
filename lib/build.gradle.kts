@@ -29,9 +29,10 @@ repositories {
 val internal: Configuration by configurations.creating
 
 dependencies {
-  implementation(libs.checkerframework.qual)
-  implementation(libs.jetbrains.annotations)
-  implementation(libs.jspecify)
+  api(libs.checkerframework.qual)
+  api(libs.jetbrains.annotations)
+  api(libs.jspecify)
+  implementation(libs.guava)
   implementation(libs.spotbugs.annotations)
   testImplementation(libs.hamcrest)
   testImplementation(libs.mockito)
