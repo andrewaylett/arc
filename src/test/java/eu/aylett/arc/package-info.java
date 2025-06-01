@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Andrew Aylett
+ * Copyright 2024-2025 Andrew Aylett
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,6 @@
  */
 
 @NullMarked
-package eu.aylett.arc.internal;
+package eu.aylett.arc;
 
 import org.jspecify.annotations.NullMarked;
