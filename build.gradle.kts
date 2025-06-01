@@ -90,7 +90,7 @@ spotless {
   java {
     importOrder("", "java|javax|jakarta", "\\#", "\\#java|\\#javax|\\#jakarta").semanticSort()
     removeUnusedImports()
-    eclipse().configFile("../config/eclipse-java-formatter.xml")
+    eclipse().configFile("./config/eclipse-java-formatter.xml")
     formatAnnotations()
   }
   kotlinGradle {
