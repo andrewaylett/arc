@@ -21,6 +21,8 @@ plugins {
 
 version = aylett.versions.gitVersion()
 
+val versionDetails = aylett.versions.versionDetails()
+
 group = "eu.aylett.arc"
 
 repositories {
@@ -242,3 +244,37 @@ signing {
   useInMemoryPgpKeys(signingKey, "")
   sign(publishing.publications)
 }
+
+@Suppress("unused")
+val printCurrentVersion by
+    tasks.registering {
+      group = "version"
+      doLast { println(versionDetails.lastTag) }
+    }
+
+@Suppress("unused")
+val printReadmeDemo by
+    tasks.registering {
+      group = "documentation"
+      doLast {
+        val testFile = projectDir.resolve("src/test/java/eu/aylett/arc/ReadmeTest.java")
+        var skipNext = false
+        for (line in testFile.readLines()) {
+          if (skipNext) {
+            skipNext = false
+          } else if (line.contains('*')) {
+            // Skip license comment
+            continue
+          } else if (line.startsWith("package")) {
+            skipNext = true
+          } else if (line.startsWith("import")) {
+            println("import eu.aylett.arc.Arc;")
+          } else if (line.contains("@Test")) {
+            println("  public static void main(String[] args) {")
+            skipNext = true
+          } else {
+            println(line)
+          }
+        }
+      }
+    }
