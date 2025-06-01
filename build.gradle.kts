@@ -1,5 +1,6 @@
 @file:Suppress("UnstableApiUsage")
 
+import okio.ByteString.Companion.decodeBase64
 import org.checkerframework.gradle.plugin.CheckerFrameworkExtension
 
 plugins {
@@ -15,6 +16,7 @@ plugins {
   id("info.solidsoft.pitest") version "1.15.0"
   id("com.groupcdg.pitest.github") version "1.0.7"
   id("com.github.spotbugs") version "6.1.13"
+  id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
 
 version = aylett.versions.gitVersion()
@@ -175,9 +177,52 @@ publishing {
   }
 }
 
-// signing {
-//  val signingKey: String? by project
-//  val signingPassword: String? by project
-//  useInMemoryPgpKeys(signingKey, signingPassword)
-//  sign(publishing.publications)
-// }
+@Suppress("unused")
+nexusPublishing {
+  repositories {
+    sonatype {
+      username = System.getenv("OSSRH_TOKEN_USER")
+      password = System.getenv("OSSRH_TOKEN_PASSWORD")
+    }
+  }
+}
+
+publishing.publications {
+  @Suppress("unused")
+  val mavenJava by
+      creating(MavenPublication::class) {
+        from(components["java"])
+        pom {
+          name.set("Ar")
+          description.set("An Adaptive Replacement Cache with expiry and refresh.")
+          url.set("https://arc.aylett.eu/")
+          licenses {
+            license {
+              name.set("Apache-2.0")
+              url.set("https://www.apache.org/licenses/LICENSE-2.0")
+            }
+          }
+          developers {
+            developer {
+              id.set("aylett")
+              name.set("Andrew Aylett")
+              email.set("andrew@aylett.eu")
+              organization.set("Andrew Aylett")
+              organizationUrl.set("https://www.aylett.co.uk/")
+            }
+          }
+          scm {
+            connection.set("scm:git:https://github.com/andrewaylett/arc.git")
+            developerConnection.set("scm:git:ssh://git@github.com:andrewaylett/arc.git")
+            url.set("https://github.com/andrewaylett/arc/")
+          }
+        }
+      }
+}
+
+signing {
+  setRequired({ gradle.taskGraph.hasTask(":publishMavenJavaPublicationToSonatypeRepository") })
+  val signingKey: String? = System.getenv("GPG_SIGNING_KEY")?.decodeBase64()?.utf8()
+  useInMemoryPgpKeys(signingKey, "")
+  sign(publishing.publications)
+}

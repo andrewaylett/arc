@@ -22,7 +22,7 @@ jobs:
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       with:
-        fetch-depth: 2
+        fetch-depth: 0 # so we can work out our version correctly
 
     - name: Validate Gradle Wrapper
       uses: gradle/actions/wrapper-validation@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4
@@ -33,8 +33,21 @@ jobs:
         distribution: temurin
         java-version: 21
 
+    # A push will be from Renovate, so I can agree to the terms.
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4
+      uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4
+      if: github.actor != 'andrewaylett' && github.event_name != 'push'
+      with:
+        dependency-graph: 'generate-and-submit'
+
+    - name: Setup Gradle Build Scan
+      uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4
+      if: github.actor == 'andrewaylett' || github.event_name == 'push'
+      with:
+        dependency-graph: 'generate-and-submit'
+        build-scan-publish: 'true'
+        build-scan-terms-of-use-agree: 'yes'
+        build-scan-terms-of-use-url: https://gradle.com/help/legal-terms-of-use
 
     - name: Execute Pitest
       run: ./gradlew --no-configuration-cache pitest-github
