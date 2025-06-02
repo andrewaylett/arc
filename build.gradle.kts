@@ -164,6 +164,22 @@ val printPitestReportLocation by
 
 tasks.named("pitest").configure { finalizedBy(printPitestReportLocation) }
 
+val checkPublishVersion by
+    tasks.registering {
+      doNotTrackState("Either does nothing or fails the build")
+      doFirst {
+        val versionDetails = aylett.versions.versionDetails()
+        if (!versionDetails.isCleanTag) {
+          logger.error("Version details is {}", versionDetails)
+          throw IllegalStateException(
+              "Can't publish a library with a version (${versionDetails.version}) that's not a clean tag",
+          )
+        }
+      }
+    }
+
+tasks.withType<PublishToMavenRepository>().configureEach { dependsOn(checkPublishVersion) }
+
 publishing {
   repositories {
     maven {
