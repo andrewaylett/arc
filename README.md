@@ -41,7 +41,7 @@ dependencies {
     implementation 'eu.aylett.arc:arc:0.1.0'
 }
 ```
-<!-- [[[end]]] (checksum: d5ea57cfcca437efbd1f279011922168) -->
+<!-- [[[end]]] -->
 
 Build yourself a suitable cache:
 
@@ -67,4 +67,4 @@ public class ReadmeTest {
   }
 }
 ```
-<!-- [[[end]]] (checksum: caf7f544dc976983ac7639203bf9694b) -->
+<!-- [[[end]]] -->
