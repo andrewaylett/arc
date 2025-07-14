@@ -28,6 +28,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
@@ -67,7 +68,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
 
   private ElementList owner;
   private @Nullable DelayedElement currentDelayedElement = null;
-  private int ownerRefCount = 0;
+  private final AtomicInteger ownerRefCount = new AtomicInteger();
 
   @SuppressFBWarnings("EI2")
   public Element(K key, Function<? super K, V> loader, Function<Supplier<V>, CompletableFuture<V>> pool,
@@ -173,10 +174,10 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
       // Let our previous owner know that we're being added to a different list
       oldOwner.noteRemovedElement();
       owner = fromOwner;
-      ownerRefCount = 1;
+      ownerRefCount.set(1);
       return true;
     } else {
-      ownerRefCount++;
+      ownerRefCount.getAndIncrement();
       return false;
     }
   }
@@ -188,8 +189,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
       // We've been added to a different list already
       return false;
     }
-    ownerRefCount--;
-    if (ownerRefCount == 0) {
+    if (ownerRefCount.decrementAndGet() == 0) {
       expire();
       return true;
     }
@@ -223,7 +223,7 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   }
 
   int refCount() {
-    return ownerRefCount;
+    return ownerRefCount.get();
   }
 
   @Holding("this.lock")
@@ -245,9 +245,10 @@ public final class Element<K extends @NonNull Object, V extends @NonNull Object>
   }
 
   @Override
+  @SuppressWarnings("method.guarantee.violated")
   public String toString(@GuardSatisfied Element<K, V> this) {
     return "Element{" + "key=" + key + ", value=" + value + ", weakValue=" + weakValue.get() + ", owner=" + owner
-        + ", ownerRefCount=" + ownerRefCount + '}';
+        + ", ownerRefCount=" + ownerRefCount.getOpaque() + '}';
   }
 
   /**

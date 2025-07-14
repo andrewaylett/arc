@@ -73,9 +73,8 @@ abstract class ExpiredElementList extends ElementList {
       }
     }
     verify(seen.size() == initialSize, "Size mismatch: found %s items != expected %s", seen.size(), this.size);
-    seen.forEach((k, v) -> {
-      verify(k.refCount() <= v, "Element %s has ref count of %s > expected %s", k, k.refCount(), v);
-    });
+    seen.forEach(
+        (k, v) -> verify(k.refCount() <= v, "Element %s has ref count of %s > expected %s", k, k.refCount(), v));
 
     verify(initialSize <= capacity, "Size of %s exceeds capacity of %s: %s", size, capacity, this);
   }
