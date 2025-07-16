@@ -24,6 +24,7 @@ import org.checkerframework.checker.lock.qual.Holding;
 import org.checkerframework.checker.lock.qual.MayReleaseLocks;
 import org.checkerframework.checker.lock.qual.ReleasesNoLocks;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -67,7 +68,7 @@ public class InnerArc {
   /**
    * The target size for the seen-once LRU list.
    */
-  private int targetSeenOnceCapacity;
+  private final AtomicInteger targetSeenOnceCapacity = new AtomicInteger();
 
   /**
    * Constructs a new InnerArc with the specified capacity.
@@ -85,7 +86,7 @@ public class InnerArc {
     seenMultiExpiring = new ExpiredElementList.SeenMulti(capacity, this);
     seenOnceLRU = new LRUElementList(ListId.SEEN_ONCE_LRU, capacity, seenOnceExpiring, this);
     seenMultiLRU = new LRUElementList(ListId.SEEN_MULTI_LRU, capacity, seenMultiExpiring, this);
-    targetSeenOnceCapacity = capacity;
+    targetSeenOnceCapacity.set(capacity);
   }
 
   /**
@@ -98,7 +99,7 @@ public class InnerArc {
   @Holding("#1.lock")
   @ReleasesNoLocks
   public void enqueueNewElement(Element<?, ?> newElement) {
-    if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity) {
+    if (seenOnceLRU.getCapacity() >= targetSeenOnceCapacity.get()) {
       seenOnceLRU.push(newElement);
     } else {
       if (seenMultiLRU.shrink()) {
@@ -130,7 +131,7 @@ public class InnerArc {
   @Holding("#1.lock")
   @ReleasesNoLocks
   public void enqueueSeenOnceElement(Element<?, ?> e) {
-    targetSeenOnceCapacity = Math.min(initialCapacity * 2 - 1, targetSeenOnceCapacity + 1);
+    targetSeenOnceCapacity.accumulateAndGet(initialCapacity * 2 - 1, (prev, max) -> Math.min(max, prev + 1));
     seenMultiLRU.push(e);
   }
 
@@ -143,7 +144,7 @@ public class InnerArc {
     } else {
       seenMultiLRU.push(e);
     }
-    targetSeenOnceCapacity = Math.max(1, targetSeenOnceCapacity - 1);
+    targetSeenOnceCapacity.accumulateAndGet(1, (prev, min) -> Math.max(min, prev - 1));
   }
 
   @MayReleaseLocks
