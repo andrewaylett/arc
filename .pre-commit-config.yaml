@@ -66,7 +66,7 @@ repos:
     - --comment-style
     - '/*| *| */'
 - repo: https://github.com/andrewaylett/pre-commit-hooks
-  rev: v0.6.3
+  rev: v0.7.0
   hooks:
   - id: init-hooks
   - id: cog
