@@ -9,7 +9,7 @@ plugins {
   `maven-publish`
   signing
   id("eu.aylett.conventions") version "0.5.2"
-  id("eu.aylett.plugins.version") version "0.5.2"
+  id("eu.aylett.plugins.version") version "0.7.0"
   id("org.checkerframework") version "0.6.57"
   id("com.diffplug.spotless") version "7.2.1"
   checkstyle
